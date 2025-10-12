@@ -21,6 +21,15 @@ class KeystoneWarpLayout @JvmOverloads constructor(
         style = Paint.Style.FILL
     }
     private var hasWarp = false
+    private var warpEnabled = true
+
+    fun setWarpEnabled(enabled: Boolean) {
+        warpEnabled = enabled
+        Log.d(TAG, "setWarpEnabled: enabled=${enabled}")
+        invalidate()
+    }
+
+    fun isWarpEnabled(): Boolean = warpEnabled
 
     fun loadConfig() {
         val csv = readFromProvider()
@@ -84,9 +93,10 @@ class KeystoneWarpLayout @JvmOverloads constructor(
 
     override fun dispatchDraw(canvas: Canvas) {
         val pts = points
-        if (pts == null || !hasWarp) {
+        if (pts == null || !hasWarp || !warpEnabled) {
             if (pts == null) Log.w(TAG, "dispatchDraw: points=null, fallback normal draw")
-            else Log.d(TAG, "dispatchDraw: hasWarp=false, fallback normal draw")
+            else if (!hasWarp) Log.d(TAG, "dispatchDraw: hasWarp=false, fallback normal draw")
+            else Log.d(TAG, "dispatchDraw: warpEnabled=false, fallback normal draw")
             super.dispatchDraw(canvas)
             return
         }

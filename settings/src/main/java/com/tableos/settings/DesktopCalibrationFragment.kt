@@ -16,6 +16,7 @@ import androidx.fragment.app.Fragment
 
 class DesktopCalibrationFragment : Fragment() {
     private lateinit var calibrator: KeystoneCalibratorView
+    private var warpLayout: KeystoneWarpLayout? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -27,6 +28,9 @@ class DesktopCalibrationFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // 进入桌面矫正页面时，禁用根布局的 Keystone 变形，避免“二次型变”
+        warpLayout = requireActivity().findViewById(R.id.keystone_root)
+        warpLayout?.setWarpEnabled(false)
         calibrator = view.findViewById(R.id.keystone_calibrator)
         calibrator.isFocusable = true
         calibrator.isFocusableInTouchMode = true
@@ -59,6 +63,26 @@ class DesktopCalibrationFragment : Fragment() {
                 .setCancelable(true)
                 .show()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 保守做法：确保恢复进入时禁用状态（防止外部误开）
+        warpLayout = requireActivity().findViewById(R.id.keystone_root)
+        warpLayout?.setWarpEnabled(false)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // 离开页面时恢复全局变形能力
+        warpLayout?.setWarpEnabled(true)
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        // 进一步确保销毁视图后恢复
+        warpLayout?.setWarpEnabled(true)
+        warpLayout = null
     }
 
     private fun saveConfig() {
