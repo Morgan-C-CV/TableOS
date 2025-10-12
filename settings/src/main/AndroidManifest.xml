@@ -16,6 +16,8 @@
     </queries>
 
     <!-- 不再需要 WRITE_SETTINGS：矫正配置已使用私有 Provider 保存 -->
+    <!-- 允许写入全局矫正配置（签名级权限，匹配同签名） -->
+    <uses-permission android:name="com.tableos.keystone.WRITE" />
 
     <application
         android:allowBackup="true"

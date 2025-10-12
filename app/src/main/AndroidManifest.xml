@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 全局矫正写入权限，仅签名应用可写入（Settings） -->
+    <permission
+        android:name="com.tableos.keystone.WRITE"
+        android:protectionLevel="signature" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -17,7 +22,8 @@
         <provider
             android:name=".KeystoneProvider"
             android:authorities="com.tableos.app.keystone"
-            android:exported="true" />
+            android:exported="true"
+            android:writePermission="com.tableos.keystone.WRITE" />
 
         <activity
             android:name=".MainActivity"
