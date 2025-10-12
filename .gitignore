@@ -1,0 +1,28 @@
+# OS
+.DS_Store
+
+# Gradle caches and build outputs
+.gradle/
+**/build/
+
+# Keep Gradle wrapper files (they should be versioned)
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# Android project
+local.properties
+captures/
+*.apk
+*.ap_
+*.aab
+*.iml
+
+# Logs
+build_log*.txt
+
+# Signing keys (do not commit secrets)
+*.jks
+*.keystore
+*.pem
+*.p12
+*.key
