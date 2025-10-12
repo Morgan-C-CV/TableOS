@@ -2,6 +2,8 @@ package com.tableos.settings
 
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.ContentValues
+import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.KeyEvent
@@ -61,22 +63,33 @@ class DesktopCalibrationFragment : Fragment() {
 
     private fun saveConfig() {
         val csv = calibrator.buildCsv()
-        val canWrite = Settings.System.canWrite(requireContext())
-        if (!canWrite) {
-            Toast.makeText(requireContext(), "请允许修改系统设置以保存矫正", Toast.LENGTH_SHORT).show()
-            try {
-                val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
-                startActivity(intent)
-            } catch (_: Exception) {
-                // 忽略
+        // 优先写入 TableOS 私有 ContentProvider，避免修改全局系统设置
+        val providerUri = Uri.parse("content://com.tableos.app.keystone/config")
+        val ok = try {
+            val values = ContentValues().apply { put("value", csv) }
+            requireContext().contentResolver.insert(providerUri, values) != null
+        } catch (e: Exception) { false }
+
+        if (ok) {
+            Toast.makeText(requireContext(), "已保存桌面矫正设置（仅 TableOS 生效）", Toast.LENGTH_SHORT).show()
+            // 保存成功后自动回到 TableOS 并应用矫正
+            val pm = requireContext().packageManager
+            val launch = pm.getLaunchIntentForPackage("com.tableos.app")
+            if (launch != null) {
+                launch.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+                try {
+                    startActivity(launch)
+                    requireActivity().finish()
+                } catch (_: Exception) {
+                    // 启动失败时仅保留提示，不崩溃
+                }
             }
-            return
-        }
-        try {
-            Settings.System.putString(requireContext().contentResolver, "tableos_keystone", csv)
-            Toast.makeText(requireContext(), "已保存桌面矫正设置", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            Toast.makeText(requireContext(), "保存失败：${e.message}", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(requireContext(), "保存失败：无法写入 TableOS 配置提供者", Toast.LENGTH_SHORT).show()
         }
         parentFragmentManager.popBackStack()
     }

@@ -14,6 +14,10 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.TableOS">
+        <provider
+            android:name=".KeystoneProvider"
+            android:authorities="com.tableos.app.keystone"
+            android:exported="true" />
 
         <activity
             android:name=".MainActivity"

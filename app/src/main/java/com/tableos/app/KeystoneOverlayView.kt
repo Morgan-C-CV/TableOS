@@ -3,6 +3,7 @@ package com.tableos.app
 import android.content.Context
 import android.graphics.*
 import android.provider.Settings
+import android.net.Uri
 import android.util.AttributeSet
 import android.view.View
 
@@ -30,13 +31,13 @@ class KeystoneOverlayView @JvmOverloads constructor(
     }
 
     fun loadConfig() {
-        try {
-            val csv = Settings.System.getString(context.contentResolver, "tableos_keystone")
-            points = parseCsv(csv)
-            invalidate()
-        } catch (_: Exception) {
-            points = null
+        val csv = readFromProvider() ?: run {
+            try {
+                Settings.System.getString(context.contentResolver, "tableos_keystone")
+            } catch (_: Exception) { null }
         }
+        points = parseCsv(csv)
+        invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -70,6 +71,17 @@ class KeystoneOverlayView @JvmOverloads constructor(
                 Pair(sx.toFloat(), sy.toFloat())
             }
         } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun readFromProvider(): String? {
+        return try {
+            val uri = Uri.parse("content://com.tableos.app.keystone/config")
+            context.contentResolver.query(uri, arrayOf("value"), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            }
+        } catch (_: Exception) {
             null
         }
     }

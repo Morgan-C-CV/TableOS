@@ -10,10 +10,12 @@
         <!-- Android TV / Google TV 设置包：用于 Remotes & Accessories 页面回退 -->
         <package android:name="com.android.tv.settings" />
         <package android:name="com.google.android.tv.settings" />
+        <!-- 使 settings 能看到 TableOS 的私有 ContentProvider（Android 11+ 包可见性） -->
+        <package android:name="com.tableos.app" />
+        <provider android:authorities="com.tableos.app.keystone" />
     </queries>
 
-    <!-- 写入系统设置用于持久化桌面矫正配置 -->
-    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <!-- 不再需要 WRITE_SETTINGS：矫正配置已使用私有 Provider 保存 -->
 
     <application
         android:allowBackup="true"

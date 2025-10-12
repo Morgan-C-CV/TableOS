@@ -33,10 +33,16 @@ class MainActivity : AppCompatActivity() {
         recyclerView.layoutManager = GridLayoutManager(this, 1)
 
         applyLightingBrightness()
-        // 加载桌面矫正配置
-        findViewById<KeystoneOverlayView>(R.id.keystone_overlay).loadConfig()
+        // 初次加载桌面矫正配置（全页面透视变形）
+        findViewById<KeystoneWarpLayout>(R.id.keystone_root).loadConfig()
         lightingArea.requestFocus()
         loadApps()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 从设置返回时刷新变形配置
+        findViewById<KeystoneWarpLayout>(R.id.keystone_root).loadConfig()
     }
 
     private fun applyLightingBrightness() {
