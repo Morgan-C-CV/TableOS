@@ -90,27 +90,31 @@ class KeystoneWarpLayout @JvmOverloads constructor(
             super.dispatchDraw(canvas)
             return
         }
-        // 为了让剪裁区域与透视后的坐标系一致：
-        // 使用 warpMatrix 的逆矩阵将屏幕空间的 polygon Path 映射到预变换坐标系，
-        // 之后先应用 warpMatrix，再用逆变换后的 path 做剪裁。
-        val inv = Matrix()
-        val invertible = warpMatrix.invert(inv)
-        val clipPreTransform = Path(path)
-        if (invertible) {
-            clipPreTransform.transform(inv)
-        } else {
-            Log.w(TAG, "dispatchDraw: warpMatrix not invertible, fallback normal draw")
-            super.dispatchDraw(canvas)
-            return
-        }
-
-        val save = canvas.save()
+        // 1) 先透视绘制内容（不剪裁），确保内容可见
+        val saveContent = canvas.save()
         canvas.concat(warpMatrix)
-        canvas.clipPath(clipPreTransform)
-        Log.d(TAG, "dispatchDraw: applying warp with inverse-clip, size=${width}x${height}")
-        // 不主动填充全屏黑色，避免错误剪裁时造成整屏黑；如需黑边，由上层背景负责。
+        Log.d(TAG, "dispatchDraw: applying warp draw, size=${width}x${height}")
         super.dispatchDraw(canvas)
-        canvas.restoreToCount(save)
+        canvas.restoreToCount(saveContent)
+
+        // 2) 再在外部区域绘制黑边：fullRect - path
+        val full = Path().apply {
+            addRect(0f, 0f, width.toFloat(), height.toFloat(), Path.Direction.CW)
+        }
+        val outside = Path()
+        val opOk = outside.op(full, path, Path.Op.DIFFERENCE)
+        if (opOk) {
+            Log.d(TAG, "dispatchDraw: draw outside black border")
+            canvas.drawPath(outside, blackPaint)
+        } else {
+            Log.w(TAG, "dispatchDraw: Path.op failed, fallback fill full black bg then re-draw content")
+            // 兜底：填充黑底，再重画内容
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), blackPaint)
+            val s2 = canvas.save()
+            canvas.concat(warpMatrix)
+            super.dispatchDraw(canvas)
+            canvas.restoreToCount(s2)
+        }
     }
 
     private fun toPx(p: Pair<Float, Float>): Pair<Float, Float> {
