@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <Preference
+        android:key="category_network"
+        android:title="网络与连接"
+        android:summary="Wi‑Fi、蓝牙与互联网设置" />
+
+    <Preference
+        android:key="category_display"
+        android:title="显示"
+        android:summary="亮度、屏幕与外接显示" />
+
+    <Preference
+        android:key="category_sound"
+        android:title="声音"
+        android:summary="音量、铃声与其他音频设置" />
+
+    <Preference
+        android:key="category_apps"
+        android:title="应用与通知"
+        android:summary="应用管理与权限" />
+
+    <Preference
+        android:key="category_storage"
+        android:title="存储"
+        android:summary="磁盘空间与文件" />
+
+    <Preference
+        android:key="category_about"
+        android:title="关于设备"
+        android:summary="设备信息与软件版本" />
+
+</PreferenceScreen>

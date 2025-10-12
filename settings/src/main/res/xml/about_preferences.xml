@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <Preference
+        android:key="about_device"
+        android:title="关于设备"
+        android:summary="查看设备信息与版本" />
+</PreferenceScreen>

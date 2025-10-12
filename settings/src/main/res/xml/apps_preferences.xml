@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <Preference
+        android:key="apps"
+        android:title="应用与通知"
+        android:summary="管理应用与权限" />
+</PreferenceScreen>

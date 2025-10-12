@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <Preference
+        android:key="storage"
+        android:title="存储"
+        android:summary="查看内部存储使用情况" />
+</PreferenceScreen>

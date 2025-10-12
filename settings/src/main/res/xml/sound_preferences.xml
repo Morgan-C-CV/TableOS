@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <Preference
+        android:key="volume"
+        android:title="声音"
+        android:summary="音量与提示音设置" />
+</PreferenceScreen>

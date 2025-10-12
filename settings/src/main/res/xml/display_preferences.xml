@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <Preference
+        android:key="brightness"
+        android:title="显示与亮度"
+        android:summary="亮度、字体与屏幕设置" />
+    <Preference
+        android:key="screensaver"
+        android:title="屏保"
+        android:summary="配置屏保和时间" />
+</PreferenceScreen>

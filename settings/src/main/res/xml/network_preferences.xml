@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <Preference
+        android:key="wifi"
+        android:title="Wi‑Fi"
+        android:summary="配置无线网络" />
+    <Preference
+        android:key="bluetooth"
+        android:title="蓝牙"
+        android:summary="管理蓝牙设备" />
+    <Preference
+        android:key="internet"
+        android:title="更多连接"
+        android:summary="移动网络、飞行模式等" />
+</PreferenceScreen>
