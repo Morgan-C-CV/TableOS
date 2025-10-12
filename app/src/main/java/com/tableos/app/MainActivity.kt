@@ -99,7 +99,27 @@ class MainActivity : AppCompatActivity() {
             val pkg = info.activityInfo.packageName
             val act = info.activityInfo.name
             AppInfo(label, pkg, act, icon)
-        }.sortedBy { it.label.lowercase() }
+        }.sortedBy { it.label.lowercase() }.toMutableList()
+
+        // 插入系统设置入口到 App Bar 顶部（若未存在）
+        try {
+            val settingsIntent = Intent(android.provider.Settings.ACTION_SETTINGS)
+            val resolved = settingsIntent.resolveActivity(pm)
+            if (resolved != null) {
+                val settingsPkg = resolved.packageName
+                val settingsAct = resolved.className
+                val alreadyHas = apps.any { it.packageName == settingsPkg }
+                if (!alreadyHas) {
+                    val appInfo = pm.getApplicationInfo(settingsPkg, 0)
+                    val label = pm.getApplicationLabel(appInfo).toString()
+                    val icon = pm.getApplicationIcon(settingsPkg)
+                    val settingsEntry = AppInfo(label, settingsPkg, settingsAct, icon)
+                    apps.add(0, settingsEntry)
+                }
+            }
+        } catch (_: Exception) {
+            // 忽略：设备可能无标准系统设置入口
+        }
 
         adapter.submitList(apps)
     }
