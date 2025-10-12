@@ -8,4 +8,8 @@
         android:key="screensaver"
         android:title="屏保"
         android:summary="配置屏保和时间" />
+    <Preference
+        android:key="desktop_calibration"
+        android:title="桌面矫正"
+        android:summary="调整显示区域四角，实现梯形变形" />
 </PreferenceScreen>

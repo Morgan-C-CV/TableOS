@@ -33,6 +33,8 @@ class MainActivity : AppCompatActivity() {
         recyclerView.layoutManager = GridLayoutManager(this, 1)
 
         applyLightingBrightness()
+        // 加载桌面矫正配置
+        findViewById<KeystoneOverlayView>(R.id.keystone_overlay).loadConfig()
         lightingArea.requestFocus()
         loadApps()
     }

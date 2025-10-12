@@ -18,5 +18,14 @@ class DisplaySettingsFragment : PreferenceFragmentCompat() {
             startActivity(Intent(Settings.ACTION_DREAM_SETTINGS))
             true
         }
+
+        findPreference<Preference>("desktop_calibration")?.setOnPreferenceClickListener {
+            parentFragmentManager
+                .beginTransaction()
+                .replace(R.id.settings_container, DesktopCalibrationFragment())
+                .addToBackStack(null)
+                .commit()
+            true
+        }
     }
 }

@@ -50,4 +50,16 @@
             android:focusableInTouchMode="true" />
     </LinearLayout>
 
+    <!-- 桌面矫正遮罩：置于顶层，仅保留矫正后的多边形区域显示 -->
+    <com.tableos.app.KeystoneOverlayView
+        android:id="@+id/keystone_overlay"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clickable="false"
+        android:focusable="false"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>
