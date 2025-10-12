@@ -18,6 +18,10 @@
     <!-- 不再需要 WRITE_SETTINGS：矫正配置已使用私有 Provider 保存 -->
     <!-- 允许写入全局矫正配置（签名级权限，匹配同签名） -->
     <uses-permission android:name="com.tableos.keystone.WRITE" />
+    <!-- 摄像头权限，用于视频输入测试 -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 声明可选摄像头特性，避免无摄像头设备安装受限 -->
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <application
         android:allowBackup="true"

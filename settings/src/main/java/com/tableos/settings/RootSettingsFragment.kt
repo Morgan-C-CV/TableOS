@@ -16,6 +16,10 @@ class RootSettingsFragment : PreferenceFragmentCompat() {
             navigate(DisplaySettingsFragment())
             true
         }
+        findPreference<Preference>("category_input")?.setOnPreferenceClickListener {
+            navigate(InputControlSettingsFragment())
+            true
+        }
         findPreference<Preference>("category_sound")?.setOnPreferenceClickListener {
             navigate(SoundSettingsFragment())
             true

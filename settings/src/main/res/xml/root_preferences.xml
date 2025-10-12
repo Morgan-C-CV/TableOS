@@ -12,6 +12,11 @@
         android:summary="亮度、屏幕与外接显示" />
 
     <Preference
+        android:key="category_input"
+        android:title="输入控制"
+        android:summary="输入设备与视频输入设置" />
+
+    <Preference
         android:key="category_sound"
         android:title="声音"
         android:summary="音量、铃声与其他音频设置" />
