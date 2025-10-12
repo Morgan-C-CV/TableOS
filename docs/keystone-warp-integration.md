@@ -165,3 +165,56 @@ adb logcat -s KeystoneWarpLayout SettingsActivity
 - 打开目标应用页面，确认内容按四点透视显示，未覆盖区域为黑边。
 - 更新配置（如在“桌面矫正”页保存），返回目标应用应与桌面一致。
 - 若异常，按“日志与排查”章节逐项定位并修正。
+
+## 在特定页面禁用变形
+
+某些页面（例如桌面矫正、拍照取景、标定或开发者调试页）需要真实的、未变形的坐标系，否则会出现“二次变形”或坐标偏差。建议在进入这些页面时临时禁用根布局的变形，在退出时恢复。
+
+实现要点：
+- 根布局提供开关：`KeystoneWarpLayout.setWarpEnabled(Boolean)`；仅影响绘制阶段，不改动配置加载。
+- 绘制判断：只有 `points != null && hasWarp && warpEnabled == true` 才应用透视矩阵；否则走普通绘制。
+- 生命周期中设置开关：进入禁用、退出恢复；避免遗留关闭状态影响其他页面。
+
+示例（桌面矫正页面）：
+
+```kotlin
+class DesktopCalibrationFragment : Fragment() {
+    private lateinit var calibrator: KeystoneCalibratorView
+    private var warpLayout: KeystoneWarpLayout? = null
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        // 进入页面禁用变形，避免“二次型变”误差
+        warpLayout = requireActivity().findViewById(R.id.keystone_root)
+        warpLayout?.setWarpEnabled(false)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 保守确保禁用仍生效（防外部误开）
+        warpLayout = requireActivity().findViewById(R.id.keystone_root)
+        warpLayout?.setWarpEnabled(false)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // 离开页面恢复全局变形能力
+        warpLayout?.setWarpEnabled(true)
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        warpLayout?.setWarpEnabled(true)
+        warpLayout = null
+    }
+}
+```
+
+Activity 级替代方案：
+- 在需要禁用的 `Activity` 的 `onResume()` 中调用 `setWarpEnabled(false)`，在 `onPause()` 恢复为 `true`。
+- 不建议修改全局 `loadConfig()`；禁用应仅限绘制阶段，保持配置一致性。
+
+最佳实践：
+- 始终在退出页面时恢复为 `true`，避免影响其他页面。
+- 与对话框、半透明 Fragment 叠加时，以顶层页面的行为为准；确保只在目标期间禁用。
+- 建议增加日志：`setWarpEnabled: enabled=false/true`，便于排查状态错配。
