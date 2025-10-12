@@ -4,19 +4,27 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.graphics.Color
+import android.view.KeyEvent
+import android.view.View
+import android.view.ViewParent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var adapter: AppsAdapter
+    private lateinit var lightingArea: View
+    private var lightingBrightness: Float = 1.0f // 0.0f ~ 1.0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        lightingArea = findViewById(R.id.lighting_area)
         recyclerView = findViewById(R.id.apps_recycler)
         adapter = AppsAdapter(emptyList()) { app ->
             launchApp(app)
@@ -24,7 +32,59 @@ class MainActivity : AppCompatActivity() {
         recyclerView.adapter = adapter
         recyclerView.layoutManager = GridLayoutManager(this, 1)
 
+        applyLightingBrightness()
+        lightingArea.requestFocus()
         loadApps()
+    }
+
+    private fun applyLightingBrightness() {
+        val v = (lightingBrightness.coerceIn(0f, 1f) * 255f).roundToInt()
+        lightingArea.setBackgroundColor(Color.rgb(v, v, v))
+    }
+
+    private fun adjustBrightnessBy(delta: Float) {
+        lightingBrightness = (lightingBrightness + delta).coerceIn(0f, 1f)
+        applyLightingBrightness()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val inLighting = lightingArea.hasFocus()
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (inLighting) { adjustBrightnessBy(+0.1f); return true }
+                }
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    if (inLighting) { adjustBrightnessBy(-0.1f); return true }
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    if (inLighting) { moveFocusToAppBar(); return true }
+                }
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    if (isFocusInAppBar()) { lightingArea.requestFocus(); return true }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun isFocusInAppBar(): Boolean {
+        val cf = currentFocus ?: return false
+        if (cf === recyclerView) return true
+        var parent: ViewParent? = cf.parent
+        while (parent != null) {
+            if (parent === recyclerView) return true
+            parent = parent.parent
+        }
+        return false
+    }
+
+    private fun moveFocusToAppBar() {
+        recyclerView.requestFocus()
+        recyclerView.post {
+            val v = recyclerView.layoutManager?.findViewByPosition(0)
+            v?.requestFocus()
+        }
     }
 
     private fun loadApps() {

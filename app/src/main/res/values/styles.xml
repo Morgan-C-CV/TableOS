@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 应用主题切换到 MaterialComponents 以支持 Material 组件 -->
+    <style name="Theme.TableOS" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#4DA3F7</item>
+        <item name="colorPrimaryVariant">#1F7BD9</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#00C2A8</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="colorSurface">#1A1F24</item>
+        <item name="colorOnSurface">#E6FFFFFF</item>
+        <item name="android:colorBackground">#101317</item>
+    </style>
+</resources>

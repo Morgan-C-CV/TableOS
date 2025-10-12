@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="app_tile_focus_stroke">2dp</dimen>
+    <dimen name="app_tile_icon_padding_default">6dp</dimen>
+    <dimen name="app_tile_icon_padding_focus">1dp</dimen>
+</resources>
