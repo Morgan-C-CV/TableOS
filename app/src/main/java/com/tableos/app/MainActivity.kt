@@ -101,14 +101,15 @@ class MainActivity : AppCompatActivity() {
             AppInfo(label, pkg, act, icon)
         }.sortedBy { it.label.lowercase() }.toMutableList()
 
-        // 优先置顶自定义 Settings；缺失时回退到系统设置入口
+        // 将设置入口永远放在 App Bar 列表的最后：
+        // 优先使用自定义 Settings；缺失时回退到系统设置入口
         try {
             val customPkg = "com.tableos.settings"
             val customAct = "com.tableos.settings.SettingsActivity"
             val index = apps.indexOfFirst { it.packageName == customPkg }
             if (index >= 0) {
                 val item = apps.removeAt(index)
-                apps.add(0, item)
+                apps.add(item) // 放到最后
             } else {
                 // 回退：插入系统设置入口（若可解析且未存在）
                 val settingsIntent = android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
@@ -119,13 +120,13 @@ class MainActivity : AppCompatActivity() {
                     val existingIndex = apps.indexOfFirst { it.packageName == settingsPkg }
                     if (existingIndex >= 0) {
                         val item = apps.removeAt(existingIndex)
-                        apps.add(0, item)
+                        apps.add(item) // 放到最后
                     } else {
                         val appInfo = pm.getApplicationInfo(settingsPkg, 0)
                         val label = pm.getApplicationLabel(appInfo).toString()
                         val icon = pm.getApplicationIcon(settingsPkg)
                         val settingsEntry = AppInfo(label, settingsPkg, settingsAct, icon)
-                        apps.add(0, settingsEntry)
+                        apps.add(settingsEntry) // 放到最后
                     }
                 }
             }

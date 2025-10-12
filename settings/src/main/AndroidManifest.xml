@@ -1,10 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 提升可见性：声明可查询的蓝牙设置意图与系统设置包 -->
+    <queries>
+        <intent>
+            <action android:name="android.settings.BLUETOOTH_SETTINGS" />
+        </intent>
+        <package android:name="com.android.settings" />
+        <!-- Android TV / Google TV 设置包：用于 Remotes & Accessories 页面回退 -->
+        <package android:name="com.android.tv.settings" />
+        <package android:name="com.google.android.tv.settings" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:label="Settings"
-        android:icon="@android:drawable/ic_menu_manage"
+        android:icon="@drawable/ic_settings_gear"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
         <activity

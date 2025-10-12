@@ -4,4 +4,8 @@
         android:key="about_device"
         android:title="关于设备"
         android:summary="查看设备信息与版本" />
+    <Preference
+        android:key="system_version"
+        android:title="系统版本"
+        android:summary="目前系统为TableOS v0.1.0" />
 </PreferenceScreen>
