@@ -22,7 +22,7 @@ class MainActivity : AppCompatActivity() {
             launchApp(app)
         }
         recyclerView.adapter = adapter
-        recyclerView.layoutManager = GridLayoutManager(this, 5)
+        recyclerView.layoutManager = GridLayoutManager(this, 1)
 
         loadApps()
     }
