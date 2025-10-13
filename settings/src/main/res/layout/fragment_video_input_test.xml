@@ -8,6 +8,23 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- 画面最外层白色虚线边框：用于提示将角点拖动至虚线框位置 -->
+    <com.tableos.settings.DashedBorderView
+        android:id="@+id/dashed_border"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="false"
+        android:focusable="false" />
+
+    <!-- 叠加校正视图：仅画边框和角点，不填充、不覆盖背景 -->
+    <com.tableos.settings.KeystoneCalibratorView
+        android:id="@+id/camera_calibrator"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:focusable="true"
+        android:focusableInTouchMode="true" />
+
     <TextView
         android:id="@+id/hint_text"
         android:layout_width="wrap_content"
@@ -17,6 +34,6 @@
         android:textSize="16sp"
         android:padding="16dp"
         android:background="#66000000"
-        android:text="视频输入测试：按返回退出测试" />
+        android:text="视频输入矫正：将四角拖动到画面中的白色虚线边框四角标识处；若看不见虚线边框，请将角点调整为布满整个画面。按返回保存/退出" />
 
 </FrameLayout>

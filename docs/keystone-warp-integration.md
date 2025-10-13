@@ -6,7 +6,11 @@
 
 - 变换由四个归一化坐标点定义，按顺序：`左上(top-left)；右上(top-right)；右下(bottom-right)；左下(bottom-left)`。
 - 每个点为 `x,y`，取值范围 `[0,1]`，表示相对于目标视图宽高的比例坐标。
-- 全局配置通过 ContentProvider 暴露，URI：`content://com.tableos.app.keystone/config`，返回一条记录，字段 `value` 的格式：`x0,y0;x1,y1;x2,y2;x3,y3`。
+- 全局配置通过 ContentProvider 暴露：
+  - 显示矫正（桌面透视）：`content://com.tableos.app.keystone/config`
+  - 相机输入最大可视区域：`content://com.tableos.app.keystone/input_region`
+  
+  两者均返回一条记录，字段 `value` 的格式统一为：`x0,y0;x1,y1;x2,y2;x3,y3`。
 
 示例（单位归一化）：
 

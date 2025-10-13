@@ -23,6 +23,20 @@ class KeystoneCalibratorView @JvmOverloads constructor(
     private val paintPoint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; style = Paint.Style.FILL }
     private val paintPointSel = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#4DA3F7"); style = Paint.Style.FILL }
 
+    // 可选绘制：是否填充背景为黑色（默认 true），是否填充四边形区域（默认 true）
+    private var drawBackground = true
+    private var fillPolygon = true
+
+    fun setDrawBackground(enabled: Boolean) {
+        drawBackground = enabled
+        invalidate()
+    }
+
+    fun setFillPolygon(enabled: Boolean) {
+        fillPolygon = enabled
+        invalidate()
+    }
+
     init {
         // 初始为四周 5% 内缩的矩形
         val m = 0.05f
@@ -37,8 +51,10 @@ class KeystoneCalibratorView @JvmOverloads constructor(
         val w = width.toFloat()
         val h = height.toFloat()
 
-        // 背景使用纯黑色
-        canvas.drawColor(Color.BLACK)
+        // 背景使用纯黑色；相机校正场景可关闭以透出底层 TextureView
+        if (drawBackground) {
+            canvas.drawColor(Color.BLACK)
+        }
 
         val p0 = px(0, w, h); val p1 = px(1, w, h); val p2 = px(2, w, h); val p3 = px(3, w, h)
         val path = Path().apply {
@@ -48,8 +64,10 @@ class KeystoneCalibratorView @JvmOverloads constructor(
             lineTo(p3.first, p3.second)
             close()
         }
-        // 填充四边形为白色，并绘制白色边框
-        canvas.drawPath(path, paintFill)
+        // 填充四边形为白色（可选），并绘制白色边框
+        if (fillPolygon) {
+            canvas.drawPath(path, paintFill)
+        }
         canvas.drawPath(path, paintLine)
 
         // 四角点

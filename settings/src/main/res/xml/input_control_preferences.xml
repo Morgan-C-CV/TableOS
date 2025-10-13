@@ -7,6 +7,6 @@
 
     <Preference
         android:key="video_input_test"
-        android:title="视频输入测试"
-        android:summary="用于测试视频输入信号" />
+        android:title="视频输入矫正"
+        android:summary="校准相机输入最大可视区域" />
 </PreferenceScreen>

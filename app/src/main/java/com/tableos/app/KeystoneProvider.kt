@@ -11,7 +11,9 @@ class KeystoneProvider : ContentProvider() {
     companion object {
         const val AUTHORITY = "com.tableos.app.keystone"
         val CONTENT_URI: Uri = Uri.parse("content://$AUTHORITY/config")
+        val INPUT_REGION_URI: Uri = Uri.parse("content://$AUTHORITY/input_region")
         private const val MATCH_CONFIG = 1
+        private const val MATCH_INPUT_REGION = 2
     }
 
     private lateinit var uriMatcher: UriMatcher
@@ -19,6 +21,7 @@ class KeystoneProvider : ContentProvider() {
     override fun onCreate(): Boolean {
         uriMatcher = UriMatcher(UriMatcher.NO_MATCH).apply {
             addURI(AUTHORITY, "config", MATCH_CONFIG)
+            addURI(AUTHORITY, "input_region", MATCH_INPUT_REGION)
         }
         return true
     }
@@ -38,6 +41,13 @@ class KeystoneProvider : ContentProvider() {
                 if (value != null) cursor.addRow(arrayOf(value))
                 cursor
             }
+            MATCH_INPUT_REGION -> {
+                val prefs = context!!.getSharedPreferences("keystone_prefs", 0)
+                val value = prefs.getString("input_region", null)
+                val cursor = MatrixCursor(arrayOf("value"))
+                if (value != null) cursor.addRow(arrayOf(value))
+                cursor
+            }
             else -> null
         }
     }
@@ -50,6 +60,13 @@ class KeystoneProvider : ContentProvider() {
                 prefs.edit().putString("csv", v).apply()
                 context?.contentResolver?.notifyChange(CONTENT_URI, null)
                 CONTENT_URI
+            }
+            MATCH_INPUT_REGION -> {
+                val v = values?.getAsString("value")
+                val prefs = context!!.getSharedPreferences("keystone_prefs", 0)
+                prefs.edit().putString("input_region", v).apply()
+                context?.contentResolver?.notifyChange(INPUT_REGION_URI, null)
+                INPUT_REGION_URI
             }
             else -> null
         }
@@ -64,6 +81,13 @@ class KeystoneProvider : ContentProvider() {
                 context?.contentResolver?.notifyChange(CONTENT_URI, null)
                 1
             }
+            MATCH_INPUT_REGION -> {
+                val v = values?.getAsString("value")
+                val prefs = context!!.getSharedPreferences("keystone_prefs", 0)
+                prefs.edit().putString("input_region", v).apply()
+                context?.contentResolver?.notifyChange(INPUT_REGION_URI, null)
+                1
+            }
             else -> 0
         }
     }
@@ -76,13 +100,20 @@ class KeystoneProvider : ContentProvider() {
                 context?.contentResolver?.notifyChange(CONTENT_URI, null)
                 1
             }
+            MATCH_INPUT_REGION -> {
+                val prefs = context!!.getSharedPreferences("keystone_prefs", 0)
+                prefs.edit().remove("input_region").apply()
+                context?.contentResolver?.notifyChange(INPUT_REGION_URI, null)
+                1
+            }
             else -> 0
         }
     }
 
     override fun getType(uri: Uri): String? {
         return when (uriMatcher.match(uri)) {
-            MATCH_CONFIG -> "vnd.android.cursor.item/vnd.tableos.keystone"
+            MATCH_CONFIG -> "vnd.android.cursor.item/vnd.tableos.keystone.config"
+            MATCH_INPUT_REGION -> "vnd.android.cursor.item/vnd.tableos.keystone.input_region"
             else -> null
         }
     }
