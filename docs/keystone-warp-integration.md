@@ -222,3 +222,45 @@ Activity 级替代方案：
 - 始终在退出页面时恢复为 `true`，避免影响其他页面。
 - 与对话框、半透明 Fragment 叠加时，以顶层页面的行为为准；确保只在目标期间禁用。
 - 建议增加日志：`setWarpEnabled: enabled=false/true`，便于排查状态错配。
+
+- 无法读取 Provider（Android 11+ 包可见性）
+  - 现象：`readFromProvider: length=0`、`loadConfig: csv=null`，后续 `hasWarp=false`。
+  - 解决：在模块 `beakerlab/src/main/AndroidManifest.xml` 添加 `<queries>` 可见性声明：
+    - `<package android:name="com.tableos.app" />`
+    - `<provider android:authorities="com.tableos.app.keystone" />`
+  - 验证：`adb logcat -s KeystoneWarpLayout` 中应看到 `readFromProvider: length>0` 或至少无权限/可见性错误。
+
+- Provider 为空（未保存或首次启动）
+  - 现象：`csv=null`，随后不做变形。
+  - 解决（回退读取旧键）：在 `KeystoneWarpLayout.loadConfig()` 里对 Provider 读取失败时回退到旧系统键：
+    - `Settings.System.getString(contentResolver, "tableos_keystone")`
+  - 写入示例（设置页已实现）：
+    - 通过 `ContentValues().apply { put("value", csv) }` 写入 `content://com.tableos.app.keystone/config`；第三方应用无法写入，仅同签名应用（Settings）可写。
+
+- CSV 格式错误或点顺序不当
+  - 现象：`parseCsv error` 或 `buildMatrix: invalid polygon`，随后 `hasWarp=false`。
+  - 解决：确保四段格式 `x0,y0;x1,y1;x2,y2;x3,y3`，点顺序严格为 `TL,TR,BR,BL`，坐标归一化且在 `[0,1]` 范围内；保证凸性与不越界。
+
+- 方向相反或“二次变形”
+  - 现象：实际显示与桌面变形方向相反或偏移倍增。
+  - 解决：统一使用前向矩阵绘制；在标定页或需要真实坐标系的页面调用 `KeystoneWarpLayout.setWarpEnabled(false)`，退出时恢复为 `true`，避免在已全局透视的环境中叠加一次。
+
+- 视图尺寸未就绪或 `Path.op` 失败
+  - 现象：`width/height=0` 导致跳过变形；`Path.op` 返回 `false` 时外部黑边未绘制。
+  - 解决：在 `onSizeChanged` 重建矩阵；`Path.op` 失败时采用兜底策略（填充黑底后再重绘内容）。
+
+## 快速排查清单（日志期望）
+
+- 读取阶段：`loadConfig: csv=...`、`readFromProvider: length=...`。
+- 解析阶段：`loadConfig: parsed points=[...]`。
+- 矩阵阶段：`buildMatrix: dst=[...] area=... hasWarp=...`、越界/非凸提示。
+- 绘制阶段：`dispatchDraw: applying warp draw` 或明确的回退分支说明（`points=null`、`hasWarp=false`、`warpEnabled=false`）。
+
+## 示例代码片段（对齐当前实现）
+
+- Provider 可见性（`beakerlab/src/main/AndroidManifest.xml`）：
+  - `<queries>` 中加入 `com.tableos.app` 包与 `com.tableos.app.keystone` Provider。
+- 读取回退（`KeystoneWarpLayout.loadConfig()`）：
+  - 先读 `content://com.tableos.app.keystone/config`，空则回退 `Settings.System.getString(contentResolver, "tableos_keystone")`。
+- 标定页面禁用变形（`DesktopCalibrationFragment`）：
+  - 进入/恢复时 `setWarpEnabled(false)`；离开/销毁时恢复为 `true`。

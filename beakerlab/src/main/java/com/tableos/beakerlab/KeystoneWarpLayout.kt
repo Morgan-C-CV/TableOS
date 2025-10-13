@@ -32,7 +32,12 @@ class KeystoneWarpLayout @JvmOverloads constructor(
     fun isWarpEnabled(): Boolean = warpEnabled
 
     fun loadConfig() {
-        val csv = readFromProvider()
+        // 读取 TableOS Provider；若为空，回退读取旧版系统设置键（桌面已使用）
+        val csv = readFromProvider() ?: run {
+            try {
+                android.provider.Settings.System.getString(context.contentResolver, "tableos_keystone")
+            } catch (_: Exception) { null }
+        }
         Log.d(TAG, "loadConfig: csv=${csv?.take(100)}")
         points = parseCsv(csv)
         Log.d(TAG, "loadConfig: parsed points=${points}")
@@ -99,6 +104,7 @@ class KeystoneWarpLayout @JvmOverloads constructor(
             return
         }
         val saveContent = canvas.save()
+        // 与 settings 模块保持一致：使用前向矩阵绘制
         canvas.concat(warpMatrix)
         Log.d(TAG, "dispatchDraw: applying warp draw, size=${width}x${height}")
         super.dispatchDraw(canvas)
@@ -128,12 +134,13 @@ class KeystoneWarpLayout @JvmOverloads constructor(
 
     private fun parseCsv(csv: String?): Array<Pair<Float, Float>>? {
         if (csv.isNullOrBlank()) return null
-        val parts = csv.split(";")
+        val parts = csv.trim().split(";")
         if (parts.size != 4) return null
         return try {
             Array(4) { i ->
-                val (sx, sy) = parts[i].split(",")
-                Pair(sx.toFloat(), sy.toFloat())
+                val seg = parts[i].trim()
+                val (sx, sy) = seg.split(",")
+                Pair(sx.trim().toFloat(), sy.trim().toFloat())
             }
         } catch (e: Exception) {
             Log.e(TAG, "parseCsv error: ${e.message}")
@@ -141,18 +148,26 @@ class KeystoneWarpLayout @JvmOverloads constructor(
         }
     }
 
-    private fun readFromProvider(): String? {
+    private fun readFromProvider(uriStr: String = "content://com.tableos.app.keystone/config"): String? {
         return try {
-            val uri = Uri.parse("content://com.tableos.app.keystone/config")
+            val uri = Uri.parse(uriStr)
             context.contentResolver.query(uri, arrayOf("value"), null, null, null)?.use { c ->
                 val v = if (c.moveToFirst()) c.getString(0) else null
-                Log.d(TAG, "readFromProvider: length=${v?.length ?: 0}")
+                Log.d(TAG, "readFromProvider(${uriStr}): length=${v?.length ?: 0}")
                 v
             }
         } catch (e: Exception) {
-            Log.e(TAG, "readFromProvider error: ${e.message}")
+            Log.e(TAG, "readFromProvider(${uriStr}) error: ${e.message}")
             null
         }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        try {
+            Log.d(TAG, "onAttachedToWindow: trigger loadConfig")
+            loadConfig()
+        } catch (_: Throwable) {}
     }
 
     private fun polygonArea(p0: Pair<Float, Float>, p1: Pair<Float, Float>, p2: Pair<Float, Float>, p3: Pair<Float, Float>): Float {
