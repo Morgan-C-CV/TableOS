@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
 import com.lenslab.ui.OpticsView
+import com.tableos.settings.KeystoneWarpLayout
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -83,5 +84,11 @@ class MainActivity : AppCompatActivity() {
         btnShowHelpers.setOnCheckedChangeListener { _, isChecked ->
             opticsView.setShowHelpers(isChecked)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 加载并应用桌面透视配置
+        findViewById<KeystoneWarpLayout>(R.id.keystone_root)?.loadConfig()
     }
 }
