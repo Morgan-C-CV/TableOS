@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Incoming white light beam -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillAlpha="0.9"
+        android:pathData="M 8,54 L 40,50 L 40,58 L 8,54 Z" />
+
+    <!-- Triangular prism -->
+    <path
+        android:fillColor="#B3E1F5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:pathData="M 44,68 L 64,68 L 54,44 Z" />
+
+    <!-- Dispersion rainbow beams -->
+    <path android:fillColor="#FF5252" android:pathData="M 54,56 L 100,52 L 100,55 L 54,58 Z" />
+    <path android:fillColor="#FF9800" android:pathData="M 54,58 L 100,56 L 100,59 L 54,60 Z" />
+    <path android:fillColor="#FFEB3B" android:pathData="M 54,60 L 100,60 L 100,63 L 54,62 Z" />
+    <path android:fillColor="#4CAF50" android:pathData="M 54,62 L 100,64 L 100,67 L 54,64 Z" />
+    <path android:fillColor="#2196F3" android:pathData="M 54,64 L 100,68 L 100,71 L 54,66 Z" />
+    <path android:fillColor="#9C27B0" android:pathData="M 54,66 L 100,72 L 100,75 L 54,68 Z" />
+
+    <!-- Subtle glow around prism -->
+    <path
+        android:fillColor="#33FFFFFF"
+        android:pathData="M 40,72 C 40,84 68,84 68,72 C 68,60 40,60 40,72 Z" />
+    
+</vector>

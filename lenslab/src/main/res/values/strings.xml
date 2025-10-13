@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lens Lab</string>
+    <string name="add_emitter">添加发射器</string>
+    <string name="add_mirror">添加平面镜</string>
+    <string name="add_prism">添加三棱镜</string>
+    <string name="add_convex_lens">添加凸透镜</string>
+    <string name="add_concave_lens">添加凹透镜</string>
+    <string name="show_helpers">显示辅助线</string>
+    <string name="fit_lens">拟合透镜</string>
+    <string name="fit_mirror">拟合镜面</string>
+</resources>

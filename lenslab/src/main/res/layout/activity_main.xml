@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.lenslab.ui.OpticsView
+        android:id="@+id/optics_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/toolbar_bg"
+        android:orientation="horizontal"
+        android:padding="12dp">
+
+        <Button
+            android:id="@+id/btn_add_emitter"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/toolbar_text"
+            android:text="@string/add_emitter" />
+
+        <Button
+            android:id="@+id/btn_add_mirror"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/toolbar_text"
+            android:text="@string/add_mirror" />
+
+        <Button
+            android:id="@+id/btn_add_prism"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/toolbar_text"
+            android:text="@string/add_prism" />
+
+        <Button
+            android:id="@+id/btn_add_convex_lens"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/toolbar_text"
+            android:text="@string/add_convex_lens" />
+
+        <Button
+            android:id="@+id/btn_add_concave_lens"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/toolbar_text"
+            android:text="@string/add_concave_lens" />
+
+        <Button
+            android:id="@+id/btn_fit_lens"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/toolbar_text"
+            android:text="@string/fit_lens" />
+
+        <Button
+            android:id="@+id/btn_fit_mirror"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/toolbar_text"
+            android:text="@string/fit_mirror" />
+    </LinearLayout>
+
+    <CheckBox
+        android:id="@+id/btn_show_helpers"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="12dp"
+        android:text="@string/show_helpers"
+        android:textColor="@color/toolbar_text"
+        android:background="@color/toolbar_bg"
+        android:padding="6dp" />
+
+</FrameLayout>
