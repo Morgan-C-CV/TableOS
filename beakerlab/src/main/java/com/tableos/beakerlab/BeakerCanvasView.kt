@@ -8,6 +8,7 @@ import android.text.TextPaint
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import android.os.SystemClock
 import kotlin.math.hypot
 
 class BeakerCanvasView @JvmOverloads constructor(
@@ -49,6 +50,30 @@ class BeakerCanvasView @JvmOverloads constructor(
     private var activeId: Int? = null
     private var lastX = 0f
     private var lastY = 0f
+
+    // --- Reaction effects ---
+    private enum class EffectType { FIRE, GAS, GLOW }
+    private data class ActiveEffect(
+        val types: List<EffectType>,
+        val startMs: Long,
+        val x: Float,
+        val y: Float,
+        val durationMs: Long = 2000L
+    )
+    private var currentEffect: ActiveEffect? = null
+    private val flamePaints = listOf(
+        Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FFD54F") }, // yellow
+        Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FB8C00") }, // orange
+        Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#E53935") }  // red
+    )
+    private val bubblePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#99FFFFFF")
+        style = Paint.Style.FILL
+    }
+    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#66FFFF66")
+        style = Paint.Style.FILL
+    }
 
     fun addCard(type: ChemicalType) {
         val r = dp(28f)
@@ -93,9 +118,15 @@ class BeakerCanvasView @JvmOverloads constructor(
                 val dist = hypot(a.x - b.x, a.y - b.y)
                 val reaction = reactionFor(a.type, b.type)
                 if (reaction != null && dist <= threshold) {
-                    eqText = reaction
+                    eqText = reaction.equation
                     eqX = (a.x + b.x) / 2f
                     eqY = (a.y + b.y) / 2f - dp(48f)
+                    val now = SystemClock.uptimeMillis()
+                    val eff = currentEffect
+                    val needStart = eff == null || now - eff.startMs >= eff.durationMs
+                    if (needStart) {
+                        currentEffect = ActiveEffect(reaction.effects, now, eqX, eqY + dp(24f))
+                    }
                     break
                 }
             }
@@ -111,7 +142,27 @@ class BeakerCanvasView @JvmOverloads constructor(
                 eqY + padding,
                 dp(8f), dp(8f), eqBgPaint
             )
-            canvas.drawText(eqText!!, eqX - tw / 2f, eqY, eqPaint)
+            canvas.drawText(eqText, eqX - tw / 2f, eqY, eqPaint)
+        }
+
+        // Draw active effects if any
+        val eff = currentEffect
+        if (eff != null) {
+            val now = SystemClock.uptimeMillis()
+            val t = (now - eff.startMs).toFloat() / eff.durationMs
+            if (t in 0f..1f) {
+                for (type in eff.types) {
+                    when (type) {
+                        EffectType.FIRE -> drawFireEffect(canvas, eff.x, eff.y, t)
+                        EffectType.GAS -> drawGasEffect(canvas, eff.x, eff.y, t)
+                        EffectType.GLOW -> drawGlowEffect(canvas, eff.x, eff.y, t)
+                    }
+                }
+                // keep animating
+                postInvalidateOnAnimation()
+            } else {
+                currentEffect = null
+            }
         }
     }
 
@@ -157,16 +208,69 @@ class BeakerCanvasView @JvmOverloads constructor(
         return null
     }
 
-    private fun reactionFor(a: ChemicalType, b: ChemicalType): String? {
+    private data class ReactionInfo(val equation: String, val effects: List<EffectType>)
+    private fun reactionFor(a: ChemicalType, b: ChemicalType): ReactionInfo? {
         val pair = setOf(a, b)
         return when (pair) {
-            setOf(ChemicalType.Na, ChemicalType.H2O) -> "2Na + 2H₂O → 2NaOH + H₂↑"
-            setOf(ChemicalType.HCl, ChemicalType.NaOH) -> "HCl + NaOH → NaCl + H₂O"
-            setOf(ChemicalType.Na, ChemicalType.Cl2) -> "2Na + Cl₂ → 2NaCl"
-            setOf(ChemicalType.H2, ChemicalType.O2) -> "2H₂ + O₂ → 2H₂O"
-            setOf(ChemicalType.H2, ChemicalType.Cl2) -> "H₂ + Cl₂ → 2HCl"
-            setOf(ChemicalType.CO2, ChemicalType.H2O) -> "CO₂ + H₂O ⇌ H₂CO₃"
+            setOf(ChemicalType.Na, ChemicalType.H2O) -> ReactionInfo(
+                "2Na + 2H₂O → 2NaOH + H₂↑",
+                listOf(EffectType.GAS, EffectType.GLOW)
+            )
+            setOf(ChemicalType.HCl, ChemicalType.NaOH) -> ReactionInfo(
+                "HCl + NaOH → NaCl + H₂O",
+                listOf(EffectType.GLOW)
+            )
+            setOf(ChemicalType.Na, ChemicalType.Cl2) -> ReactionInfo(
+                "2Na + Cl₂ → 2NaCl",
+                listOf(EffectType.GLOW)
+            )
+            setOf(ChemicalType.H2, ChemicalType.O2) -> ReactionInfo(
+                "2H₂ + O₂ → 2H₂O",
+                listOf(EffectType.FIRE, EffectType.GAS)
+            )
+            setOf(ChemicalType.H2, ChemicalType.Cl2) -> ReactionInfo(
+                "H₂ + Cl₂ → 2HCl",
+                listOf(EffectType.GLOW)
+            )
+            setOf(ChemicalType.CO2, ChemicalType.H2O) -> ReactionInfo(
+                "CO₂ + H₂O ⇌ H₂CO₃",
+                emptyList()
+            )
             else -> null
+        }
+    }
+
+    private fun drawGlowEffect(canvas: Canvas, cx: Float, cy: Float, t: Float) {
+        val base = dp(60f)
+        val radius = base * (0.8f + 0.2f * kotlin.math.sin(t * Math.PI).toFloat())
+        glowPaint.alpha = (120 * (1f - t)).toInt().coerceIn(0, 255)
+        canvas.drawCircle(cx, cy, radius, glowPaint)
+    }
+
+    private fun drawGasEffect(canvas: Canvas, cx: Float, cy: Float, t: Float) {
+        val bubbles = 8
+        val rise = dp(60f) * t
+        for (i in 0 until bubbles) {
+            val angle = (i / bubbles.toFloat()) * (2f * Math.PI.toFloat())
+            val bx = cx + dp(12f) * kotlin.math.cos(angle)
+            val by = cy - rise - i * dp(3f)
+            val r = dp(6f) * (0.6f + 0.4f * ((i + 1) / bubbles.toFloat()))
+            bubblePaint.alpha = (180 * (1f - t)).toInt().coerceIn(0, 255)
+            canvas.drawCircle(bx, by, r, bubblePaint)
+        }
+    }
+
+    private fun drawFireEffect(canvas: Canvas, cx: Float, cy: Float, t: Float) {
+        val layers = flamePaints.size
+        for (i in 0 until layers) {
+            val p = flamePaints[i]
+            val scale = 1f - i * 0.2f
+            val jitter = dp(6f) * kotlin.math.sin((t + i * 0.15f) * 6f).toFloat()
+            p.alpha = (200 * (1f - t)).toInt().coerceIn(0, 255)
+            val rx = cx + jitter
+            val ry = cy - dp(10f) * i
+            val r = dp(24f) * scale
+            canvas.drawCircle(rx, ry, r, p)
         }
     }
 
