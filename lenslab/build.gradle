@@ -45,6 +45,6 @@ android {
     implementation 'androidx.core:core-ktx:1.10.1'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.9.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    // 移除对 settings 应用模块的依赖，直接在本模块包含 KeystoneWarpLayout
+    implementation project(":warp")
+    // 依赖独立的 :warp 库模块，提供 KeystoneWarpLayout
 }

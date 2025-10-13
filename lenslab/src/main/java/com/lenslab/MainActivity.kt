@@ -4,7 +4,7 @@ import android.os.Bundle
 import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
 import com.lenslab.ui.OpticsView
-import com.tableos.settings.KeystoneWarpLayout
+import com.tableos.warp.KeystoneWarpLayout
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

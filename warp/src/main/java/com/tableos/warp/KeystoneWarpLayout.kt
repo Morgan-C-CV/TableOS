@@ -1,4 +1,4 @@
-package com.tableos.settings
+package com.tableos.warp
 
 import android.content.Context
 import android.graphics.*
@@ -13,7 +13,7 @@ class KeystoneWarpLayout @JvmOverloads constructor(
 ) : ConstraintLayout(context, attrs) {
 
     private val TAG = "KeystoneWarpLayout"
-    private var points: Array<Pair<Float, Float>>? = null // 归一化坐标
+    private var points: Array<Pair<Float, Float>>? = null
     private val warpMatrix = Matrix()
     private val path = Path()
     private val blackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -56,7 +56,6 @@ class KeystoneWarpLayout @JvmOverloads constructor(
             0f, height.toFloat()
         )
         val p0 = toPx(pts[0]); val p1 = toPx(pts[1]); val p2 = toPx(pts[2]); val p3 = toPx(pts[3])
-        // 多边形有效性检查：点在视图范围内、凸性判断
         if (!isPolygonValid(p0, p1, p2, p3)) {
             hasWarp = false
             Log.w(TAG, "buildMatrix: invalid polygon, points out-of-bounds or non-convex")
@@ -79,9 +78,8 @@ class KeystoneWarpLayout @JvmOverloads constructor(
         path.lineTo(p3.first, p3.second)
         path.close()
 
-        // 多边形面积校验，避免空路径导致整屏黑色
         val area = polygonArea(p0, p1, p2, p3)
-        hasWarp = area > 1000f // 面积太小视为无效
+        hasWarp = area > 1000f
         Log.d(TAG, "buildMatrix: area=${area}, hasWarp=${hasWarp}")
     }
 
@@ -100,17 +98,13 @@ class KeystoneWarpLayout @JvmOverloads constructor(
             super.dispatchDraw(canvas)
             return
         }
-        // 1) 先透视绘制内容（不剪裁），确保内容可见
         val saveContent = canvas.save()
         canvas.concat(warpMatrix)
         Log.d(TAG, "dispatchDraw: applying warp draw, size=${width}x${height}")
         super.dispatchDraw(canvas)
         canvas.restoreToCount(saveContent)
 
-        // 2) 再在外部区域绘制黑边：fullRect - path
-        val full = Path().apply {
-            addRect(0f, 0f, width.toFloat(), height.toFloat(), Path.Direction.CW)
-        }
+        val full = Path().apply { addRect(0f, 0f, width.toFloat(), height.toFloat(), Path.Direction.CW) }
         val outside = Path()
         val opOk = outside.op(full, path, Path.Op.DIFFERENCE)
         if (opOk) {
@@ -118,7 +112,6 @@ class KeystoneWarpLayout @JvmOverloads constructor(
             canvas.drawPath(outside, blackPaint)
         } else {
             Log.w(TAG, "dispatchDraw: Path.op failed, fallback fill full black bg then re-draw content")
-            // 兜底：填充黑底，再重画内容
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), blackPaint)
             val s2 = canvas.save()
             canvas.concat(warpMatrix)
@@ -127,9 +120,8 @@ class KeystoneWarpLayout @JvmOverloads constructor(
         }
     }
 
-    private fun toPx(p: Pair<Float, Float>): Pair<Float, Float> {
-        return Pair(p.first.coerceIn(0f, 1f) * width, p.second.coerceIn(0f, 1f) * height)
-    }
+    private fun toPx(p: Pair<Float, Float>): Pair<Float, Float> =
+        Pair(p.first.coerceIn(0f, 1f) * width, p.second.coerceIn(0f, 1f) * height)
 
     private fun parseCsv(csv: String?): Array<Pair<Float, Float>>? {
         if (csv.isNullOrBlank()) return null
@@ -173,14 +165,12 @@ class KeystoneWarpLayout @JvmOverloads constructor(
         fun inBounds(p: Pair<Float, Float>): Boolean =
             p.first in 0f..width.toFloat() && p.second in 0f..height.toFloat()
 
-        // 所有点必须在视图范围内
         val boundsOk = inBounds(p0) && inBounds(p1) && inBounds(p2) && inBounds(p3)
         if (!boundsOk) {
             Log.w(TAG, "isPolygonValid: point out-of-bounds: p0=${p0}, p1=${p1}, p2=${p2}, p3=${p3}")
             return false
         }
 
-        // 凸性判断：连续边的叉积符号一致
         fun cross(a: Pair<Float, Float>, b: Pair<Float, Float>, c: Pair<Float, Float>): Float {
             val abx = b.first - a.first; val aby = b.second - a.second
             val bcx = c.first - b.first; val bcy = c.second - b.second
