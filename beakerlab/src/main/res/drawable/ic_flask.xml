@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Flask body -->
+    <path
+        android:fillColor="#3DDC84"
+        android:pathData="M54,16 L64,16 L64,26 L80,54 C86,66 78,80 64,80 L44,80 C30,80 22,66 28,54 L44,26 L44,16 L54,16 Z"/>
+    <!-- Flask neck -->
+    <path
+        android:fillColor="#2BB673"
+        android:pathData="M50,16 L58,16 L58,30 L50,30 Z"/>
+    <!-- Liquid level -->
+    <path
+        android:fillColor="#1F8E5A"
+        android:pathData="M36,62 L72,62 C72,70 66,76 58,76 L50,76 C42,76 36,70 36,62 Z"/>
+    <!-- Outline -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M54,16 L64,16 L64,26 L80,54 C86,66 78,80 64,80 L44,80 C30,80 22,66 28,54 L44,26 L44,16 L54,16 Z"/>
+</vector>

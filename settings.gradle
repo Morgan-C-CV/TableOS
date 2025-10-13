@@ -11,4 +11,4 @@ pluginManagement {
 }
 
 rootProject.name = "TableOS"
-include ':app', ':settings'
+include ':app', ':settings', ':beakerlab'
