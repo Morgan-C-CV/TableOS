@@ -8,6 +8,8 @@ import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
 import android.media.Image
 import android.media.ImageReader
+import android.graphics.YuvImage
+import android.graphics.Rect
 import android.os.Handler
 import android.os.HandlerThread
 import android.graphics.ImageFormat
@@ -15,8 +17,13 @@ import android.os.Bundle
 import android.view.*
 import android.widget.TextView
 import android.widget.Toast
+import android.provider.MediaStore
+import android.content.ContentValues
+import android.os.Build
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
 class InputRecognitionTestFragment : Fragment() {
@@ -35,6 +42,9 @@ class InputRecognitionTestFragment : Fragment() {
     private var previewWidth: Int = 0
     private var previewHeight: Int = 0
     private var appliedRotation: Int = 0
+    // 启动识别时抓拍一张保存到相册
+    @Volatile private var snapshotPending: Boolean = true
+    @Volatile private var snapshotSaved: Boolean = false
 
     private val REQUEST_CAMERA = 1101
     @Volatile private var processing = false
@@ -116,6 +126,16 @@ class InputRecognitionTestFragment : Fragment() {
         imageReader?.setOnImageAvailableListener({ reader ->
             val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
             val now = System.nanoTime()
+            // 首帧抓拍保存到相册（仅一次）
+            if (snapshotPending && !snapshotSaved) {
+                runCatching {
+                    saveImageToGallery(image)
+                    snapshotSaved = true
+                    snapshotPending = false
+                }.onFailure {
+                    Log.w("IRTest", "saveImageToGallery failed: ${it.message}")
+                }
+            }
             if (!processing && now - lastProcessNs > 80_000_000) {
                 processing = true
                 lastProcessNs = now
@@ -145,6 +165,42 @@ class InputRecognitionTestFragment : Fragment() {
             }, backgroundHandler)
         } catch (e: Exception) {
             Toast.makeText(requireContext(), "创建会话异常：${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // 将当前帧转为 JPEG 并保存到相册（MediaStore）
+    private fun saveImageToGallery(image: Image) {
+        val width = image.width
+        val height = image.height
+        val nv21 = yuv420ToNv21(image)
+        val yuv = YuvImage(nv21, ImageFormat.NV21, width, height, null)
+        val jpegOut = ByteArrayOutputStream()
+        yuv.compressToJpeg(Rect(0, 0, width, height), 90, jpegOut)
+        val bytes = jpegOut.toByteArray()
+
+        val resolver = requireContext().contentResolver
+        val fileName = "TableOS_${System.currentTimeMillis()}.jpg"
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= 29) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/TableOS")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+        }
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+        if (uri != null) {
+            resolver.openOutputStream(uri)?.use { it.write(bytes) }
+            if (Build.VERSION.SDK_INT >= 29) {
+                val cv = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+                resolver.update(uri, cv, null, null)
+            }
+            Log.i("IRTest", "Saved snapshot to gallery: $uri (${width}x${height})")
+            requireActivity().runOnUiThread {
+                Toast.makeText(requireContext(), "已保存照片至相册", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Log.w("IRTest", "Failed to insert into MediaStore")
         }
     }
 
