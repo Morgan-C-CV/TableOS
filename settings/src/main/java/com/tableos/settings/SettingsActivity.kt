@@ -34,11 +34,18 @@ class SettingsActivity : AppCompatActivity() {
         }, true)
 
         if (savedInstanceState == null) {
+            val start = intent?.getStringExtra("start_fragment")
+            val fragment: Fragment = when (start) {
+                "input_control" -> InputControlSettingsFragment()
+                "input_recog_test" -> InputRecognitionTestFragment()
+                "video_input_test" -> VideoInputTestFragment()
+                else -> RootSettingsFragment()
+            }
             supportFragmentManager
                 .beginTransaction()
-                .replace(R.id.settings_container, RootSettingsFragment())
+                .replace(R.id.settings_container, fragment)
                 .commit()
-            Log.i(TAG, "onCreate: RootSettingsFragment attached")
+            Log.i(TAG, "onCreate: initial fragment attached: ${fragment::class.java.simpleName}")
         }
     }
 

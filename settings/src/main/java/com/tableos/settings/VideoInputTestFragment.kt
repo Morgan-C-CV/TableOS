@@ -23,6 +23,9 @@ class VideoInputTestFragment : Fragment() {
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
     private var previewRequestBuilder: CaptureRequest.Builder? = null
+    private var previewWidth: Int = 0
+    private var previewHeight: Int = 0
+    private var appliedRotation: Int = 0
 
     private val REQUEST_CAMERA = 1001
 
@@ -144,7 +147,17 @@ class VideoInputTestFragment : Fragment() {
     private fun createPreviewSession() {
         val device = cameraDevice ?: return
         val surfaceTexture = textureView.surfaceTexture ?: return
-        surfaceTexture.setDefaultBufferSize(textureView.width, textureView.height)
+        // 选择较小、常见的预览尺寸，避免比例失真与高分辨率卡顿
+        val (w, h) = choosePreviewSize(device) ?: Pair(640, 480)
+        previewWidth = w
+        previewHeight = h
+        // 计算需要应用到 TextureView 的旋转角度
+        runCatching {
+            val manager = requireContext().getSystemService(CameraManager::class.java)
+            val characteristics = manager.getCameraCharacteristics(device.id)
+            appliedRotation = computeTotalRotation(characteristics)
+        }.onFailure { appliedRotation = 0 }
+        surfaceTexture.setDefaultBufferSize(previewWidth, previewHeight)
         val previewSurface = Surface(surfaceTexture)
 
         try {
@@ -164,6 +177,8 @@ class VideoInputTestFragment : Fragment() {
                             session.setRepeatingRequest(request, null, null)
                         }
                     } catch (_: Exception) {}
+                    // 应用矩阵变换，保证预览不拉伸且按需旋转
+                    runCatching { configureTransform(textureView.width, textureView.height) }
                 }
                 override fun onConfigureFailed(session: CameraCaptureSession) {
                     Toast.makeText(requireContext(), "预览会话创建失败", Toast.LENGTH_SHORT).show()
@@ -182,6 +197,71 @@ class VideoInputTestFragment : Fragment() {
                 chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
             } ?: manager.cameraIdList.firstOrNull()
         } catch (_: Exception) { null }
+    }
+
+    private fun choosePreviewSize(device: CameraDevice): Pair<Int, Int>? {
+        val manager = requireContext().getSystemService(CameraManager::class.java)
+        val characteristics = try { manager.getCameraCharacteristics(device.id) } catch (_: Exception) { return null }
+        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return null
+        val sizes = map.getOutputSizes(SurfaceTexture::class.java) ?: return null
+        // 优先 640x480，其次选择最小且不大于 1280x720 的尺寸
+        val preferred = sizes.firstOrNull { it.width == 640 && it.height == 480 }
+        if (preferred != null) return Pair(preferred.width, preferred.height)
+        var chosen: android.util.Size? = null
+        for (s in sizes) {
+            if (s.width <= 1280 && s.height <= 720) {
+                if (chosen == null || s.width * s.height < (chosen!!.width * chosen!!.height)) {
+                    chosen = s
+                }
+            }
+        }
+        val ch = chosen ?: sizes.minByOrNull { it.width * it.height } ?: return null
+        return Pair(ch.width, ch.height)
+    }
+
+    private fun computeTotalRotation(characteristics: CameraCharacteristics): Int {
+        val sensor = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+        val facing = characteristics.get(CameraCharacteristics.LENS_FACING) ?: CameraCharacteristics.LENS_FACING_BACK
+        val displayRotEnum = requireActivity().display?.rotation ?: Surface.ROTATION_0
+        val display = when (displayRotEnum) {
+            Surface.ROTATION_0 -> 0
+            Surface.ROTATION_90 -> 90
+            Surface.ROTATION_180 -> 180
+            Surface.ROTATION_270 -> 270
+            else -> 0
+        }
+        return if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
+            (sensor + display) % 360
+        } else {
+            (sensor - display + 360) % 360
+        }
+    }
+
+    private fun configureTransform(viewWidth: Int, viewHeight: Int) {
+        if (previewWidth == 0 || previewHeight == 0) return
+        val rotation = appliedRotation
+        val matrix = android.graphics.Matrix()
+        val viewRect = android.graphics.RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
+        val bufferRect = if (rotation == 90 || rotation == 270) {
+            android.graphics.RectF(0f, 0f, previewHeight.toFloat(), previewWidth.toFloat())
+        } else {
+            android.graphics.RectF(0f, 0f, previewWidth.toFloat(), previewHeight.toFloat())
+        }
+        val centerX = viewRect.centerX()
+        val centerY = viewRect.centerY()
+        if (rotation == 90 || rotation == 270) {
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
+            matrix.setRectToRect(viewRect, bufferRect, android.graphics.Matrix.ScaleToFit.FILL)
+            val scale = kotlin.math.max(
+                viewHeight.toFloat() / previewHeight.toFloat(),
+                viewWidth.toFloat() / previewWidth.toFloat()
+            )
+            matrix.postScale(scale, scale, centerX, centerY)
+            matrix.postRotate(rotation.toFloat(), centerX, centerY)
+        } else if (rotation == 180) {
+            matrix.postRotate(180f, centerX, centerY)
+        }
+        textureView.setTransform(matrix)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {

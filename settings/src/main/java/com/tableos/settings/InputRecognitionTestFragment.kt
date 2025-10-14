@@ -3,10 +3,14 @@ package com.tableos.settings
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.RectF
+import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
 import android.media.Image
 import android.media.ImageReader
+import android.os.Handler
+import android.os.HandlerThread
+import android.graphics.ImageFormat
 import android.os.Bundle
 import android.view.*
 import android.widget.TextView
@@ -24,6 +28,12 @@ class InputRecognitionTestFragment : Fragment() {
     private var captureSession: CameraCaptureSession? = null
     private var previewRequestBuilder: CaptureRequest.Builder? = null
     private var imageReader: ImageReader? = null
+    private var backgroundThread: HandlerThread? = null
+    private var backgroundHandler: Handler? = null
+    @Volatile private var lastProcessNs: Long = 0L
+    private var previewWidth: Int = 0
+    private var previewHeight: Int = 0
+    private var appliedRotation: Int = 0
 
     private val REQUEST_CAMERA = 1101
     @Volatile private var processing = false
@@ -68,11 +78,12 @@ class InputRecognitionTestFragment : Fragment() {
         if (cameraId == null) { Toast.makeText(requireContext(), "未找到可用摄像头", Toast.LENGTH_SHORT).show(); return }
         try {
             if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
+            startBackgroundThread()
             manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(device: CameraDevice) { cameraDevice = device; createPreviewSession() }
                 override fun onDisconnected(device: CameraDevice) { device.close(); cameraDevice = null }
                 override fun onError(device: CameraDevice, error: Int) { device.close(); cameraDevice = null; Toast.makeText(requireContext(), "摄像头打开失败：$error", Toast.LENGTH_SHORT).show() }
-            }, null)
+            }, backgroundHandler)
         } catch (e: Exception) {
             Toast.makeText(requireContext(), "打开摄像头异常：${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -89,21 +100,35 @@ class InputRecognitionTestFragment : Fragment() {
     private fun createPreviewSession() {
         val device = cameraDevice ?: return
         val surfaceTexture = textureView.surfaceTexture ?: return
-        val width = textureView.width.coerceAtLeast(640)
-        val height = textureView.height.coerceAtLeast(480)
-        surfaceTexture.setDefaultBufferSize(width, height)
+        // 优先选择较小且支持的 YUV 输出尺寸，避免高分辨率导致卡顿
+        var (width, height) = chooseYuvSize() ?: Pair(640, 480)
+        // YUV_420_888/NV21 要求偶数尺寸，必要时做向下取偶
+        if ((width and 1) == 1) width -= 1
+        if ((height and 1) == 1) height -= 1
+        previewWidth = width
+        previewHeight = height
+        // 计算需要应用到 TextureView 的旋转角度，保证显示正向且比例不失真
+        runCatching {
+            val manager = requireContext().getSystemService(CameraManager::class.java)
+            val characteristics = manager.getCameraCharacteristics(device.id)
+            appliedRotation = computeTotalRotation(characteristics)
+        }.onFailure { appliedRotation = 0 }
+
+        surfaceTexture.setDefaultBufferSize(previewWidth, previewHeight)
         val previewSurface = Surface(surfaceTexture)
 
         // ImageReader for YUV_420_888 frames
-        imageReader = ImageReader.newInstance(width, height, android.graphics.ImageFormat.YUV_420_888, 4)
+        imageReader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 4)
         imageReader?.setOnImageAvailableListener({ reader ->
             val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-            if (!processing) {
+            val now = System.nanoTime()
+            if (!processing && now - lastProcessNs > 80_000_000) { // ~12.5 FPS 节流
                 processing = true
+                lastProcessNs = now
                 try { processImage(image) } catch (_: Exception) {} finally { processing = false }
             }
             image.close()
-        }, null)
+        }, backgroundHandler)
 
         try {
             previewRequestBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
@@ -119,15 +144,91 @@ class InputRecognitionTestFragment : Fragment() {
                 override fun onConfigured(session: CameraCaptureSession) {
                     if (cameraDevice == null) return
                     captureSession = session
-                    try { previewRequestBuilder?.build()?.let { session.setRepeatingRequest(it, null, null) } } catch (_: Exception) {}
+                    try { previewRequestBuilder?.build()?.let { session.setRepeatingRequest(it, null, backgroundHandler) } } catch (_: Exception) {}
+                    // 根据当前视图大小与预览缓冲尺寸，应用矩阵变换，确保不拉伸且按需旋转
+                    runCatching { configureTransform(textureView.width, textureView.height) }
                 }
                 override fun onConfigureFailed(session: CameraCaptureSession) {
                     Toast.makeText(requireContext(), "预览会话创建失败", Toast.LENGTH_SHORT).show()
                 }
-            }, null)
+            }, backgroundHandler)
         } catch (e: Exception) {
             Toast.makeText(requireContext(), "创建预览异常：${e.message}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun computeTotalRotation(characteristics: CameraCharacteristics): Int {
+        val sensor = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+        val facing = characteristics.get(CameraCharacteristics.LENS_FACING) ?: CameraCharacteristics.LENS_FACING_BACK
+        val displayRotEnum = requireActivity().display?.rotation ?: Surface.ROTATION_0
+        val display = when (displayRotEnum) {
+            Surface.ROTATION_0 -> 0
+            Surface.ROTATION_90 -> 90
+            Surface.ROTATION_180 -> 180
+            Surface.ROTATION_270 -> 270
+            else -> 0
+        }
+        return if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
+            (sensor + display) % 360
+        } else {
+            (sensor - display + 360) % 360
+        }
+    }
+
+    private fun configureTransform(viewWidth: Int, viewHeight: Int) {
+        if (previewWidth == 0 || previewHeight == 0) return
+        val rotation = appliedRotation
+        val matrix = Matrix()
+        val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
+        // 缓冲区在 90/270 度时宽高对调
+        val bufferRect = if (rotation == 90 || rotation == 270) {
+            RectF(0f, 0f, previewHeight.toFloat(), previewWidth.toFloat())
+        } else {
+            RectF(0f, 0f, previewWidth.toFloat(), previewHeight.toFloat())
+        }
+        val centerX = viewRect.centerX()
+        val centerY = viewRect.centerY()
+        if (rotation == 90 || rotation == 270) {
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
+            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
+            val scale = kotlin.math.max(
+                viewHeight.toFloat() / previewHeight.toFloat(),
+                viewWidth.toFloat() / previewWidth.toFloat()
+            )
+            matrix.postScale(scale, scale, centerX, centerY)
+            matrix.postRotate(rotation.toFloat(), centerX, centerY)
+        } else if (rotation == 180) {
+            matrix.postRotate(180f, centerX, centerY)
+        }
+        textureView.setTransform(matrix)
+    }
+
+    private fun chooseYuvSize(): Pair<Int, Int>? {
+        val device = cameraDevice ?: return null
+        val manager = requireContext().getSystemService(CameraManager::class.java)
+        val characteristics = try { manager.getCameraCharacteristics(device.id) } catch (_: Exception) { return null }
+        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return null
+        val sizes = map.getOutputSizes(ImageFormat.YUV_420_888) ?: return null
+        // 优先 640x480，其次选择最接近且不大于 1280x720 的偶数尺寸
+        val preferred = sizes.firstOrNull { it.width == 640 && it.height == 480 }
+        if (preferred != null) return Pair(preferred.width, preferred.height)
+        val list: List<android.util.Size> = try {
+            val c = sizes.filter { it.width <= 1280 && it.height <= 720 }
+            if (c.isNotEmpty()) c.toList() else sizes.toList()
+        } catch (_: Exception) {
+            sizes.toList()
+        }
+        var chosen: android.util.Size? = null
+        for (s in list) {
+            if (chosen == null || s.width * s.height < (chosen!!.width * chosen!!.height)) {
+                chosen = s
+            }
+        }
+        val ch = chosen ?: return null
+        var w = ch.width; var h = ch.height
+        if ((w and 1) == 1) w -= 1
+        if ((h and 1) == 1) h -= 1
+        return Pair(w, h)
     }
 
     private fun processImage(image: Image) {
@@ -148,8 +249,11 @@ class InputRecognitionTestFragment : Fragment() {
         val boxes = mutableListOf<RectF>()
         val sb = StringBuilder()
         sb.append("识别结果：共").append(count).append("张\n")
-        val sx = textureView.width.toFloat() / width
-        val sy = textureView.height.toFloat() / height
+        // 根据旋转后的显示尺寸进行缩放计算
+        val dispW = if (appliedRotation == 90 || appliedRotation == 270) height else width
+        val dispH = if (appliedRotation == 90 || appliedRotation == 270) width else height
+        val sx = textureView.width.toFloat() / dispW
+        val sy = textureView.height.toFloat() / dispH
         for (i in 0 until count) {
             val base = 1 + i * 6
             val cardId = out[base]
@@ -161,13 +265,42 @@ class InputRecognitionTestFragment : Fragment() {
             sb.append("#").append(i + 1).append(" ID=").append(cardId)
                 .append(" 组=").append(if (group == 0) "A" else if (group == 1) "B" else "?")
                 .append(" 位置=(").append(tlx).append(",").append(tly).append(")-(").append(brx).append(",").append(bry).append(")\n")
-            boxes.add(RectF(tlx * sx, tly * sy, brx * sx, bry * sy))
+            var rect = RectF(tlx.toFloat(), tly.toFloat(), brx.toFloat(), bry.toFloat())
+            rect = transformRectForRotation(rect, width, height, appliedRotation)
+            boxes.add(RectF(rect.left * sx, rect.top * sy, rect.right * sx, rect.bottom * sy))
         }
 
         requireActivity().runOnUiThread {
             resultText.text = sb.toString()
             overlay.showBoxes(boxes)
         }
+    }
+
+    private fun transformRectForRotation(rect: RectF, w: Int, h: Int, rotation: Int): RectF {
+        if (rotation == 0) return RectF(rect)
+        val corners = arrayOf(
+            floatArrayOf(rect.left, rect.top),
+            floatArrayOf(rect.right, rect.top),
+            floatArrayOf(rect.right, rect.bottom),
+            floatArrayOf(rect.left, rect.bottom)
+        )
+        val tx = FloatArray(4)
+        val ty = FloatArray(4)
+        for (i in 0..3) {
+            val x = corners[i][0]
+            val y = corners[i][1]
+            when (rotation) {
+                90 -> { tx[i] = y; ty[i] = (w - x) }
+                180 -> { tx[i] = (w - x); ty[i] = (h - y) }
+                270 -> { tx[i] = (h - y); ty[i] = x }
+                else -> { tx[i] = x; ty[i] = y }
+            }
+        }
+        val minX = tx.minOrNull() ?: 0f
+        val maxX = tx.maxOrNull() ?: 0f
+        val minY = ty.minOrNull() ?: 0f
+        val maxY = ty.maxOrNull() ?: 0f
+        return RectF(minX, minY, maxX, maxY)
     }
 
     private fun yuv420ToNv21(image: Image): ByteArray {
@@ -229,11 +362,13 @@ class InputRecognitionTestFragment : Fragment() {
     override fun onPause() {
         super.onPause()
         closeCamera()
+        stopBackgroundThread()
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         closeCamera()
+        stopBackgroundThread()
     }
 
     private fun closeCamera() {
@@ -242,5 +377,20 @@ class InputRecognitionTestFragment : Fragment() {
         try { cameraDevice?.close() } catch (_: Exception) {}
         cameraDevice = null
         imageReader?.close(); imageReader = null
+    }
+
+    private fun startBackgroundThread() {
+        if (backgroundThread?.isAlive == true) return
+        backgroundThread = HandlerThread("CameraBackground").apply { start() }
+        backgroundHandler = Handler(backgroundThread!!.looper)
+    }
+
+    private fun stopBackgroundThread() {
+        try {
+            backgroundThread?.quitSafely()
+            backgroundThread?.join()
+        } catch (_: Exception) {}
+        backgroundThread = null
+        backgroundHandler = null
     }
 }
