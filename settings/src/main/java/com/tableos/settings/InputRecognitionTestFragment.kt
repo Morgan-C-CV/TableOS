@@ -209,22 +209,10 @@ class InputRecognitionTestFragment : Fragment() {
         val characteristics = try { manager.getCameraCharacteristics(device.id) } catch (_: Exception) { return null }
         val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return null
         val sizes = map.getOutputSizes(ImageFormat.YUV_420_888) ?: return null
-        // 优先 640x480，其次选择最接近且不大于 1280x720 的偶数尺寸
-        val preferred = sizes.firstOrNull { it.width == 640 && it.height == 480 }
-        if (preferred != null) return Pair(preferred.width, preferred.height)
-        val list: List<android.util.Size> = try {
-            val c = sizes.filter { it.width <= 1280 && it.height <= 720 }
-            if (c.isNotEmpty()) c.toList() else sizes.toList()
-        } catch (_: Exception) {
-            sizes.toList()
-        }
-        var chosen: android.util.Size? = null
-        for (s in list) {
-            if (chosen == null || s.width * s.height < (chosen!!.width * chosen!!.height)) {
-                chosen = s
-            }
-        }
-        val ch = chosen ?: return null
+        // 提升分辨率：优先选择不超过 1920x1080 的最大尺寸，否则选择支持的最大尺寸
+        val candidates = sizes.filter { it.width <= 1920 && it.height <= 1080 }
+        val ch = (candidates.maxByOrNull { it.width * it.height }
+            ?: sizes.maxByOrNull { it.width * it.height }) ?: return null
         var w = ch.width; var h = ch.height
         if ((w and 1) == 1) w -= 1
         if ((h and 1) == 1) h -= 1
