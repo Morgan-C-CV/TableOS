@@ -6,8 +6,10 @@ import android.graphics.RectF
 import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
+import android.hardware.camera2.params.ColorSpaceTransform
 import android.media.Image
 import android.media.ImageReader
+import android.util.Rational
 import android.graphics.YuvImage
 import android.graphics.Rect
 import android.os.Handler
@@ -147,8 +149,49 @@ class InputRecognitionTestFragment : Fragment() {
         try {
             previewRequestBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                 imageReader?.surface?.let { addTarget(it) }
+                
+                // 自动对焦设置
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                
+                // 自动曝光设置 - 添加曝光补偿以减少过曝
                 set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                set(CaptureRequest.CONTROL_AE_LOCK, false)
+                
+                // 曝光补偿设置 - 大幅增加曝光，显著提高亮度
+                set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, 6)
+                
+                // ISO设置 - 大幅提高ISO增加感光度和亮度
+                set(CaptureRequest.SENSOR_SENSITIVITY, 800)
+                
+                // 白平衡设置 - 使用荧光灯模式以减少色差
+                set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_FLUORESCENT)
+                set(CaptureRequest.CONTROL_AWB_LOCK, false)
+                
+                // 场景模式设置为自动
+                set(CaptureRequest.CONTROL_SCENE_MODE, CaptureRequest.CONTROL_SCENE_MODE_DISABLED)
+                set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
+                
+                // 图像稳定设置
+                set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE, CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_ON)
+                
+                // 降噪设置 - 使用快速模式以减少色彩失真
+                set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_FAST)
+                
+                // 边缘增强设置 - 使用快速模式避免过度处理
+                set(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_FAST)
+                
+                // 色彩校正设置 - 使用变换矩阵模式以获得更准确的色彩
+                set(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX)
+                
+                // 设置色彩变换矩阵以极大增加饱和度、对比度和改善黄色可见性
+                val colorTransform = ColorSpaceTransform(arrayOf(
+                    Rational(140, 100), Rational(15, 100), Rational(0, 100),    // R (极大增强红色分量，显著提高饱和度)
+                    Rational(15, 100), Rational(140, 100), Rational(0, 100),    // G (极大增强绿色分量，显著提高饱和度)
+                    Rational(0, 100), Rational(0, 100), Rational(75, 100)       // B (大幅减少蓝色分量，极大增加对比度)
+                ))
+                set(CaptureRequest.COLOR_CORRECTION_TRANSFORM, colorTransform)
+                
+                Log.i("IRTest", "Applied camera optimization parameters")
             }
 
             val targets = mutableListOf<Surface>()
@@ -248,13 +291,35 @@ class InputRecognitionTestFragment : Fragment() {
         val characteristics = try { manager.getCameraCharacteristics(device.id) } catch (_: Exception) { return null }
         val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return null
         val sizes = map.getOutputSizes(ImageFormat.YUV_420_888) ?: return null
-        // 提升分辨率：优先选择不超过 1920x1080 的最大尺寸，否则选择支持的最大尺寸
+        
+        // 提高分辨率以获得更好的图像质量：优先选择高分辨率
+        val preferredSizes = listOf(
+            Pair(1920, 1080),  // Full HD
+            Pair(1600, 1200),  // UXGA
+            Pair(1280, 960),   // SXGA
+            Pair(1280, 720),   // HD
+            Pair(1024, 768)    // XGA
+        )
+        
+        // 查找最接近的支持分辨率
+        for (preferred in preferredSizes) {
+            val match = sizes.find { 
+                it.width == preferred.first && it.height == preferred.second 
+            }
+            if (match != null) {
+                Log.i("IRTest", "Selected resolution: ${match.width}x${match.height} (preferred)")
+                return Pair(match.width, match.height)
+            }
+        }
+        
+        // 如果没有找到首选分辨率，选择不超过 1920x1080 的最大尺寸
         val candidates = sizes.filter { it.width <= 1920 && it.height <= 1080 }
         val ch = (candidates.maxByOrNull { it.width * it.height }
-            ?: sizes.maxByOrNull { it.width * it.height }) ?: return null
+            ?: sizes.minByOrNull { it.width * it.height }) ?: return null
         var w = ch.width; var h = ch.height
         if ((w and 1) == 1) w -= 1
         if ((h and 1) == 1) h -= 1
+        Log.i("IRTest", "Selected resolution: ${w}x${h} (fallback)")
         return Pair(w, h)
     }
 
@@ -262,8 +327,11 @@ class InputRecognitionTestFragment : Fragment() {
         val width = image.width
         val height = image.height
         val nv21 = yuv420ToNv21(image)
+        
+        // 应用图像预处理以减少摩尔纹和色偏
+        val processedNv21 = preprocessImage(nv21, width, height)
 
-        val out = ProjectionCardsBridge.detectNv21Safe(nv21, width, height, 8)
+        val out = ProjectionCardsBridge.detectNv21Safe(processedNv21, width, height, 8)
         val count = if (out.isNotEmpty()) out[0] else 0
         if (count <= 0) {
             requireActivity().runOnUiThread {
@@ -328,6 +396,103 @@ class InputRecognitionTestFragment : Fragment() {
         val minY = ty.minOrNull() ?: 0f
         val maxY = ty.maxOrNull() ?: 0f
         return RectF(minX, minY, maxX, maxY)
+    }
+
+    private fun preprocessImage(nv21: ByteArray, width: Int, height: Int): ByteArray {
+        val ySize = width * height
+        val processedNv21 = nv21.copyOf()
+        
+        // 对Y分量进行轻微的高斯模糊以减少摩尔纹
+        applyGaussianBlurToY(processedNv21, width, height)
+        
+        // 对Y分量进行对比度和亮度调整以改善识别效果
+        adjustContrastAndBrightness(processedNv21, width, height)
+        
+        // 调整UV分量以减少色差
+        adjustUVColorBalance(processedNv21, width, height)
+        
+        return processedNv21
+    }
+    
+    private fun applyGaussianBlurToY(nv21: ByteArray, width: Int, height: Int) {
+        val ySize = width * height
+        val temp = ByteArray(ySize)
+        
+        // 简单的3x3高斯核，权重为 [1,2,1; 2,4,2; 1,2,1] / 16
+        val kernel = intArrayOf(1, 2, 1, 2, 4, 2, 1, 2, 1)
+        val kernelSum = 16
+        
+        // 只对Y分量应用模糊
+        for (y in 1 until height - 1) {
+            for (x in 1 until width - 1) {
+                var sum = 0
+                var kernelIndex = 0
+                
+                for (ky in -1..1) {
+                    for (kx in -1..1) {
+                        val pixelIndex = (y + ky) * width + (x + kx)
+                        val pixelValue = nv21[pixelIndex].toInt() and 0xFF
+                        sum += pixelValue * kernel[kernelIndex]
+                        kernelIndex++
+                    }
+                }
+                
+                temp[y * width + x] = (sum / kernelSum).coerceIn(0, 255).toByte()
+            }
+        }
+        
+        // 复制处理后的Y分量回原数组（保留边界像素不变）
+        for (y in 1 until height - 1) {
+            for (x in 1 until width - 1) {
+                nv21[y * width + x] = temp[y * width + x]
+            }
+        }
+    }
+    
+    private fun adjustContrastAndBrightness(nv21: ByteArray, width: Int, height: Int) {
+        val ySize = width * height
+        
+        // 提高对比度和亮度以改善图像质量
+        val contrast = 1.3f   // 大幅提高对比度因子
+        val brightness = 15   // 显著增加亮度调整
+        
+        for (i in 0 until ySize) {
+            val originalValue = nv21[i].toInt() and 0xFF
+            val adjustedValue = ((originalValue - 128) * contrast + 128 + brightness)
+                .coerceIn(0.0f, 255.0f).toInt()
+            nv21[i] = adjustedValue.toByte()
+        }
+    }
+    
+    private fun adjustUVColorBalance(nv21: ByteArray, width: Int, height: Int) {
+        val ySize = width * height
+        val uvSize = ySize / 2
+        
+        // UV分量从Y分量之后开始
+        val uvStart = ySize
+        
+        // 调整UV分量以增加饱和度和改善色彩表现
+        // U分量调整（蓝色-黄色轴）- 适度调整以增加饱和度
+        // V分量调整（红色-绿色轴）- 增强红色分量以提高饱和度
+        val uAdjust = -5  // 适度减少蓝色偏移，增加饱和度
+        val vAdjust = 8   // 显著增加红色分量以提高饱和度
+        
+        for (i in 0 until uvSize step 2) {
+            val uIndex = uvStart + i
+            val vIndex = uvStart + i + 1
+            
+            if (uIndex < nv21.size && vIndex < nv21.size) {
+                // 调整U分量
+                val uValue = (nv21[uIndex].toInt() and 0xFF) + uAdjust
+                nv21[uIndex] = uValue.coerceIn(0, 255).toByte()
+                
+                // 调整V分量
+                val vValue = (nv21[vIndex].toInt() and 0xFF) + vAdjust
+                nv21[vIndex] = vValue.coerceIn(0, 255).toByte()
+            }
+        }
+        
+        Log.i("IRTest", "Applied UV color balance: U=$uAdjust, V=$vAdjust")
     }
 
     private fun yuv420ToNv21(image: Image): ByteArray {

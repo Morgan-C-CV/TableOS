@@ -1,40 +1,30 @@
 #ifndef DOT_CARD_DETECT_H
 #define DOT_CARD_DETECT_H
 
-// 统一的 OpenCV 可用性检测与条件包含
-#ifndef HAVE_OPENCV
-#  if defined(__has_include)
-#    if __has_include(<opencv2/core.hpp>)
-#      define HAVE_OPENCV 1
-#    else
-#      define HAVE_OPENCV 0
-#    endif
+#if defined(__has_include)
+#  if __has_include(<opencv2/core.hpp>)
+#    include <opencv2/core.hpp>
+#    include <opencv2/imgproc.hpp>
+#    include <opencv2/imgcodecs.hpp>
+#    include <opencv2/highgui.hpp>
+#    define HAVE_OPENCV 1
 #  else
-     // 某些静态分析器不支持 __has_include；在未明确声明时默认关闭
 #    define HAVE_OPENCV 0
 #  endif
-#endif
-
-#if HAVE_OPENCV
-#  include <opencv2/core.hpp>
-#  include <opencv2/imgproc.hpp>
-#  include <opencv2/imgcodecs.hpp>
-#endif
-
-// 高级GUI（highgui）仅在 OpenCV 可用且头存在时启用
-#if HAVE_OPENCV
-#  if defined(__has_include)
-#    if __has_include(<opencv2/highgui.hpp>)
-#      include <opencv2/highgui.hpp>
-#      define HAVE_OPENCV_HIGHGUI 1
-#    else
-#      define HAVE_OPENCV_HIGHGUI 0
+#else
+#  if __has_include(<opencv2/core.hpp>)
+#    include <opencv2/core.hpp>
+#    include <opencv2/imgproc.hpp>
+#    include <opencv2/imgcodecs.hpp>
+#    include <opencv2/highgui.hpp>
+#    ifndef HAVE_OPENCV
+#      define HAVE_OPENCV 1
 #    endif
 #  else
-#    define HAVE_OPENCV_HIGHGUI 0
+#    ifndef HAVE_OPENCV
+#      define HAVE_OPENCV 0
+#    endif
 #  endif
-#else
-#  define HAVE_OPENCV_HIGHGUI 0
 #endif
 
 #if !HAVE_OPENCV
@@ -123,7 +113,7 @@ bool checkSquareEdges(const std::vector<cv::Point>& approx);
  */
 bool verifyWhitePixelRatio(const std::vector<cv::Point>& approx, 
                           const cv::Mat& thresholdImg, 
-                          double minRatio = 0.8);
+                          double minRatio = 0.65);
 
 /**
  * 检查扩展区域的颜色

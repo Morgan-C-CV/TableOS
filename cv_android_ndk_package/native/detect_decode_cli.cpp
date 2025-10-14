@@ -364,40 +364,63 @@ int main(int argc, char** argv) {
         std::cout << "{";
         for (size_t k = 0; k < dcards.size(); ++k) {
             const auto& dc = dcards[k];
-            if (dc.corners.size() != 4) continue;
-            std::vector<cv::Point2f> cf;
-            for (const auto& p : dc.corners) cf.emplace_back((float)p.x, (float)p.y);
-            // 使用最小外接矩形来稳健地提取四角
-            auto rr_card = cv::minAreaRect(cf);
-            cv::Point2f ptsCard[4]; rr_card.points(ptsCard);
-            std::vector<cv::Point2f> cornersF(ptsCard, ptsCard+4);
-            cornersF = DotCardDetect::sortRectangleCorners(cornersF); // TL, TR, BR, BL
-            cv::Point tl((int)cornersF[0].x, (int)cornersF[0].y);
-            cv::Point tr((int)cornersF[1].x, (int)cornersF[1].y);
-            cv::Point brp((int)cornersF[2].x, (int)cornersF[2].y);
-            cv::Point bl((int)cornersF[3].x, (int)cornersF[3].y);
-            cv::Point center((int)rr_card.center.x, (int)rr_card.center.y);
+            
+            cv::Point tl, tr, brp, bl, center;
+            double angle = 0.0;
+            int bestCardId = -1;
+            
+            if (dc.corners.size() == 4) {
+                // 处理四角卡片
+                std::vector<cv::Point2f> cf;
+                for (const auto& p : dc.corners) cf.emplace_back((float)p.x, (float)p.y);
+                // 使用最小外接矩形来稳健地提取四角
+                auto rr_card = cv::minAreaRect(cf);
+                cv::Point2f ptsCard[4]; rr_card.points(ptsCard);
+                std::vector<cv::Point2f> cornersF(ptsCard, ptsCard+4);
+                cornersF = DotCardDetect::sortRectangleCorners(cornersF); // TL, TR, BR, BL
+                tl = cv::Point((int)cornersF[0].x, (int)cornersF[0].y);
+                tr = cv::Point((int)cornersF[1].x, (int)cornersF[1].y);
+                brp = cv::Point((int)cornersF[2].x, (int)cornersF[2].y);
+                bl = cv::Point((int)cornersF[3].x, (int)cornersF[3].y);
+                center = cv::Point((int)rr_card.center.x, (int)rr_card.center.y);
 
-            // 明确使用“左边”边（BL -> TL），并从下到上计算偏移角度
-            cv::Point bottom = (bl.y > tl.y) ? bl : tl;
-            cv::Point top    = (bl.y > tl.y) ? tl : bl;
-            cv::Point pBottom = bottom;
-            cv::Point pTop = top;
-            double dxv = (double)pTop.x - (double)pBottom.x;
-            double dyv = (double)pTop.y - (double)pBottom.y;
-            double dyv_up = -dyv;
-            double theta_v = std::atan2(dyv_up, dxv);
-            double angle = (theta_v - M_PI/2.0) * 180.0 / M_PI;
-            if (angle > 180.0) angle -= 360.0;
-            if (angle <= -180.0) angle += 360.0;
+                // 明确使用"左边"边（BL -> TL），并从下到上计算偏移角度
+                cv::Point bottom = (bl.y > tl.y) ? bl : tl;
+                cv::Point top    = (bl.y > tl.y) ? tl : bl;
+                cv::Point pBottom = bottom;
+                cv::Point pTop = top;
+                double dxv = (double)pTop.x - (double)pBottom.x;
+                double dyv = (double)pTop.y - (double)pBottom.y;
+                double dyv_up = -dyv;
+                double theta_v = std::atan2(dyv_up, dxv);
+                angle = (theta_v - M_PI/2.0) * 180.0 / M_PI;
+                if (angle > 180.0) angle -= 360.0;
+                if (angle <= -180.0) angle += 360.0;
 
-            // 为了输出卡片ID：使用 IoU 将 dc 与粗卡片列表关联
-            int bestCardId = -1; double bestIou = 0.0;
-            for (int i = 0; i < n; ++i) {
-                const auto& c = cards[i];
-                cv::Rect cbbox(c.tl_x, c.tl_y, c.br_x - c.tl_x, c.br_y - c.tl_y);
-                double io = iou(dc.boundingRect, cbbox);
-                if (io > bestIou) { bestIou = io; bestCardId = c.card_id; }
+                // 为了输出卡片ID：使用 IoU 将 dc 与粗卡片列表关联
+                double bestIou = 0.0;
+                for (int i = 0; i < n; ++i) {
+                    const auto& c = cards[i];
+                    cv::Rect cbbox(c.tl_x, c.tl_y, c.br_x - c.tl_x, c.br_y - c.tl_y);
+                    double io = iou(dc.boundingRect, cbbox);
+                    if (io > bestIou) { bestIou = io; bestCardId = c.card_id; }
+                }
+            } else if (dc.corners.size() == 1) {
+                // 处理单角点卡片：使用角点ID，角点中心作为rect中心，角点四角作为rect四角
+                if (!dc.cornerIndices.empty()) {
+                    bestCardId = dc.cornerIndices[0]; // 使用角点ID
+                }
+                
+                // 使用边界矩形的四角作为rect四角
+                cv::Rect bbox = dc.boundingRect;
+                tl = cv::Point(bbox.x, bbox.y);
+                tr = cv::Point(bbox.x + bbox.width, bbox.y);
+                brp = cv::Point(bbox.x + bbox.width, bbox.y + bbox.height);
+                bl = cv::Point(bbox.x, bbox.y + bbox.height);
+                center = cv::Point(bbox.x + bbox.width/2, bbox.y + bbox.height/2);
+                angle = 0.0; // 单角点没有方向角
+            } else {
+                continue; // 跳过其他情况
             }
 
             if (k) std::cout << ", ";

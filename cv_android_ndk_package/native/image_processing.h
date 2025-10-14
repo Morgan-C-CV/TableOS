@@ -1,30 +1,29 @@
 #ifndef IMAGE_PROCESSING_H
 #define IMAGE_PROCESSING_H
 
-// 统一的 OpenCV 可用性检测与条件包含，避免编辑器在缺少头文件时报错
-#ifndef HAVE_OPENCV
-#  if defined(__has_include)
-#    if __has_include(<opencv2/core.hpp>)
+#if defined(__has_include)
+#  if __has_include(<opencv2/core.hpp>)
+#    include <opencv2/core.hpp>
+#    include <opencv2/imgproc.hpp>
+#    include <opencv2/imgcodecs.hpp>
+#    if !defined(HAVE_OPENCV)
 #      define HAVE_OPENCV 1
-#    else
-#      define HAVE_OPENCV 0
 #    endif
 #  else
+#    if !defined(HAVE_OPENCV)
+#      define HAVE_OPENCV 0
+#    endif
+#  endif
+#else
+#  if !defined(HAVE_OPENCV)
 #    define HAVE_OPENCV 0
 #  endif
 #endif
 
-#if HAVE_OPENCV
-#  include <opencv2/core.hpp>
-#  include <opencv2/imgproc.hpp>
-#  include <opencv2/imgcodecs.hpp>
-#else
+#if !HAVE_OPENCV
+// 轻量级占位声明，帮助 IDE 在没有 OpenCV 头文件时静态分析
 namespace cv {
   struct Mat { int cols=0; int rows=0; bool empty() const { return cols==0||rows==0; } };
-  // 为默认参数提供占位常量，防止静态分析报未定义
-  constexpr int ADAPTIVE_THRESH_GAUSSIAN_C = 1;
-  constexpr int THRESH_BINARY = 0;
-  constexpr int THRESH_BINARY_INV = 1;
 }
 #endif
 #include <string>
@@ -46,6 +45,11 @@ cv::Mat adaptiveThreshold(const cv::Mat& image,
 std::pair<cv::Mat, double> otsuThreshold(const cv::Mat& image, 
                                         int maxValue = 255,
                                         int thresholdType = cv::THRESH_BINARY_INV);
+
+std::pair<cv::Mat, double> fixedThreshold(const cv::Mat& image, 
+                                         double thresholdValue,
+                                         int maxValue = 255,
+                                         int thresholdType = cv::THRESH_BINARY_INV);
 
 std::pair<cv::Mat, cv::Mat> preprocessImage(const cv::Mat& image,
                                            bool applyGrayscale = true,

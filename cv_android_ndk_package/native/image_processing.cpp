@@ -60,6 +60,22 @@ std::pair<cv::Mat, double> otsuThreshold(const cv::Mat& image,
     return std::make_pair(thresholdImg, thresholdValue);
 }
 
+std::pair<cv::Mat, double> fixedThreshold(const cv::Mat& image,
+                                         double thresholdValue,
+                                         int maxValue,
+                                         int thresholdType) {
+    cv::Mat processedImage = image;
+    
+    if (image.channels() != 1) {
+        processedImage = convertToGrayscale(image);
+    }
+    
+    cv::Mat thresholdImg;
+    cv::threshold(processedImage, thresholdImg, thresholdValue, maxValue, thresholdType);
+    
+    return std::make_pair(thresholdImg, static_cast<double>(thresholdValue));
+}
+
 std::pair<cv::Mat, cv::Mat> preprocessImage(const cv::Mat& image,
                                            bool applyGrayscale,
                                            bool applyThreshold,
@@ -74,6 +90,10 @@ std::pair<cv::Mat, cv::Mat> preprocessImage(const cv::Mat& image,
         defaultParams["threshold_type"] = cv::THRESH_BINARY;
         defaultParams["block_size"] = 11;
         defaultParams["c_constant"] = 2;
+    } else if (thresholdMethod == "fixed") {
+        defaultParams["max_value"] = 255;
+        defaultParams["threshold_type"] = cv::THRESH_BINARY_INV;
+        defaultParams["threshold_value"] = 60;  // 严格的黑色检测阈值
     } else {
         defaultParams["max_value"] = 255;
         defaultParams["threshold_type"] = cv::THRESH_BINARY_INV;
@@ -102,9 +122,15 @@ std::pair<cv::Mat, cv::Mat> preprocessImage(const cv::Mat& image,
                                        defaultParams["max_value"],
                                        defaultParams["threshold_type"]);
             thresholdImage = result.first;
+        } else if (thresholdMethod == "fixed") {
+            auto result = fixedThreshold(grayImage,
+                                        defaultParams["threshold_value"],
+                                        defaultParams["max_value"],
+                                        defaultParams["threshold_type"]);
+            thresholdImage = result.first;
         } else {
             throw std::invalid_argument("不支持的阈值化方法: " + thresholdMethod + 
-                                      "。支持的方法: 'adaptive', 'otsu'");
+                                      "。支持的方法: 'adaptive', 'otsu', 'fixed'");
         }
     } else {
         thresholdImage = grayImage.clone();

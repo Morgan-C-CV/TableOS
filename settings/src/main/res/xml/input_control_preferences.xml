@@ -14,4 +14,9 @@
         android:key="video_input_recog_test"
         android:title="输入识别测试"
         android:summary="实时检测并显示卡片ID与位置" />
+
+    <Preference
+        android:key="perspective_test"
+        android:title="透视变形测试"
+        android:summary="根据视频输入矫正边框进行透视矫正预览" />
 </PreferenceScreen>

@@ -25,5 +25,14 @@ class InputControlSettingsFragment : PreferenceFragmentCompat() {
                 .commit()
             true
         }
+
+        findPreference<androidx.preference.Preference>("perspective_test")?.setOnPreferenceClickListener {
+            parentFragmentManager
+                .beginTransaction()
+                .replace(R.id.settings_container, PerspectiveTestFragment())
+                .addToBackStack(null)
+                .commit()
+            true
+        }
     }
 }

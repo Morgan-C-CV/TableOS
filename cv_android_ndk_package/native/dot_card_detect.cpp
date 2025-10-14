@@ -13,19 +13,16 @@
 #endif
 
 namespace DotCardDetect {
-#if HAVE_OPENCV
 
 cv::Mat loadImage(const std::string& path) {
     return cv::imread(path);
 }
 
 cv::Mat dotPreprocess(const cv::Mat& img, bool debug) {
-    auto result = ImageProcessing::preprocessImage(img, true, true, "otsu");
+    auto result = ImageProcessing::preprocessImage(img, true, true, "fixed");
     cv::Mat grayscale = result.first;
     cv::Mat threshold = result.second;
     
-    // 调试可视化：仅在支持 highgui 的平台启用
-#if HAVE_OPENCV_HIGHGUI
     if (debug) {
         cv::imshow("original", img);
         cv::imshow("grayscale", grayscale);
@@ -33,7 +30,6 @@ cv::Mat dotPreprocess(const cv::Mat& img, bool debug) {
         cv::waitKey(0);
         cv::destroyAllWindows();
     }
-#endif
     
     return threshold;
 }
@@ -596,10 +592,10 @@ std::pair<cv::Mat, double> checkExtendedRegionsForColors(
 std::map<std::string, ColorRange> getDefaultColorRanges() {
     std::map<std::string, ColorRange> colorRanges;
     
-    // 收缩红色掩码范围，更偏向于纯红（更窄的Hue、更高的S/V下限）
-    colorRanges["Red"] = ColorRange(cv::Scalar(0, 150, 150), cv::Scalar(8, 255, 255));
-    colorRanges["Red2"] = ColorRange(cv::Scalar(172, 150, 150), cv::Scalar(180, 255, 255));
-    colorRanges["Yellow"] = ColorRange(cv::Scalar(20, 50, 50), cv::Scalar(30, 255, 255));
+    // 略微放宽红/黄阈值以提升鲁棒性（更宽Hue、降低S/V下限）
+    colorRanges["Red"] = ColorRange(cv::Scalar(0, 100, 90), cv::Scalar(12, 255, 255));
+    colorRanges["Red2"] = ColorRange(cv::Scalar(168, 100, 90), cv::Scalar(180, 255, 255));
+    colorRanges["Yellow"] = ColorRange(cv::Scalar(18, 40, 40), cv::Scalar(36, 255, 255));
     colorRanges["Green"] = ColorRange(cv::Scalar(40, 50, 50), cv::Scalar(80, 255, 255));
     colorRanges["Cyan"] = ColorRange(cv::Scalar(80, 50, 50), cv::Scalar(100, 255, 255));
     colorRanges["Blue"] = ColorRange(cv::Scalar(100, 50, 50), cv::Scalar(130, 255, 255));
@@ -621,19 +617,13 @@ void showColorMasks(const cv::Mat& hsv, const std::map<std::string, ColorRange>&
                 cv::inRange(hsv, redIt->second.lower, redIt->second.upper, redMask1);
                 cv::inRange(hsv, colorRange.lower, colorRange.upper, redMask2);
                 cv::bitwise_or(redMask1, redMask2, mask);
-                // 仅在支持 highgui 时显示
-#if HAVE_OPENCV_HIGHGUI
                 cv::imshow("Red mask", mask);
-#endif
             }
         } else if (colorName == "Red") {
             continue;
         } else {
             cv::inRange(hsv, colorRange.lower, colorRange.upper, mask);
-            // 仅在支持 highgui 时显示
-#if HAVE_OPENCV_HIGHGUI
             cv::imshow(colorName + " mask", mask);
-#endif
         }
     }
 }
@@ -875,6 +865,23 @@ std::vector<Card> pairRectanglesIntoCards(const std::vector<std::vector<cv::Poin
         }
     }
     
+    // 处理剩余的单个角点：为每个未使用的矩形创建单角点卡片
+    for (size_t i = 0; i < rectangles.size(); ++i) {
+        if (used[i]) continue;
+        
+        Card singleCornerCard;
+        singleCornerCard.cornerIndices.push_back(i);
+        
+        // 使用矩形的中心作为单个角点
+        cv::Point2f center = centers[i];
+        singleCornerCard.corners.push_back(cv::Point(static_cast<int>(center.x), static_cast<int>(center.y)));
+        
+        // 使用原始矩形的边界作为卡片的边界
+        singleCornerCard.boundingRect = cv::boundingRect(rectangles[i]);
+        
+        cards.push_back(singleCornerCard);
+    }
+    
     return cards;
 }
 
@@ -918,15 +925,12 @@ DetectionResult detectDotCards(const cv::Mat& img, bool debug) {
         }
     }
     
-    // 初始调试可视化：仅在支持 highgui 时启用
-#if HAVE_OPENCV_HIGHGUI
     if (debug) {
         showColorMasks(hsv, colorRanges);
         cv::imshow("original", img);
         cv::waitKey(0);
         cv::destroyAllWindows();
     }
-#endif
     
     cv::Mat imgThreshold = dotPreprocess(img, debug);
     
@@ -1002,7 +1006,7 @@ DetectionResult detectDotCards(const cv::Mat& img, bool debug) {
                     int h = boundingRect.height;
 
                     if (w > 10 && h > 10) {
-                        if (verifyWhitePixelRatio(approx, imgThreshold, 0.8)) {
+                        if (verifyWhitePixelRatio(approx, imgThreshold, 0.6)) {
                             localRectangles.push_back(approx);
                         }
                     }
@@ -1161,8 +1165,6 @@ DetectionResult detectDotCards(const cv::Mat& img, bool debug) {
         cv::putText(imgCopy, cardInfo, center, cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 0, 0), 2);
     }
 
-    // 末尾调试可视化与分析：仅在支持 highgui 时启用
-#if HAVE_OPENCV_HIGHGUI
     if (debug) {
         cv::imshow("rect_mask", result.rectMask);
         cv::imshow("original", imgCopy);
@@ -1241,78 +1243,9 @@ DetectionResult detectDotCards(const cv::Mat& img, bool debug) {
         cv::waitKey(0);
         cv::destroyAllWindows();
     }
-#endif
     
     result.success = !result.rectangles.empty();
     return result;
 }
 
-// 原始实现结束
-#else
-// 当 OpenCV 头文件不可用时的降级实现，避免编辑器诊断错误
-
-cv::Mat loadImage(const std::string& path) {
-    return cv::Mat();
-}
-
-cv::Mat dotPreprocess(const cv::Mat& img, bool debug) {
-    return cv::Mat();
-}
-
-bool checkSquareEdges(const std::vector<cv::Point>& approx) {
-    return false;
-}
-
-bool verifyWhitePixelRatio(const std::vector<cv::Point>& approx,
-                          const cv::Mat& thresholdImg,
-                          double minRatio) {
-    return false;
-}
-
-std::tuple<cv::Mat, double, std::map<std::string, std::pair<int, int>>> checkExtendedRegionsForColorsOptimized(
-    cv::Mat& img,
-    const std::vector<cv::Point>& approx,
-    const cv::Mat& hsv,
-    const std::map<std::string, ColorRange>& colorRanges,
-    const std::map<std::string, cv::Mat>& precomputedColorMasks) {
-    return std::make_tuple(cv::Mat(), 0.0, std::map<std::string, std::pair<int, int>>{});
-}
-
-std::pair<cv::Mat, double> checkExtendedRegionsForColors(
-    cv::Mat& img,
-    const std::vector<cv::Point>& approx,
-    const cv::Mat& hsv,
-    const std::map<std::string, ColorRange>& colorRanges) {
-    return std::make_pair(cv::Mat(), 0.0);
-}
-
-std::map<std::string, ColorRange> getDefaultColorRanges() {
-    return {};
-}
-
-void showColorMasks(const cv::Mat& hsv, const std::map<std::string, ColorRange>& colorRanges) {}
-
-cv::Mat createRedMask(const cv::Mat& hsv, const std::map<std::string, ColorRange>& colorRanges) {
-    return cv::Mat();
-}
-
-double evaluateRectangularity(const std::vector<cv::Point2f>& points) {
-    return 0.0;
-}
-
-std::vector<cv::Point2f> sortRectangleCorners(const std::vector<cv::Point2f>& points) {
-    return points;
-}
-
-std::vector<Card> pairRectanglesIntoCards(const std::vector<std::vector<cv::Point>>& rectangles, const cv::Mat& img) {
-    return {};
-}
-
-DetectionResult detectDotCards(const cv::Mat& img, bool debug) {
-    DetectionResult result;
-    result.success = false;
-    return result;
-}
-
-#endif // HAVE_OPENCV
 } // namespace DotCardDetect
