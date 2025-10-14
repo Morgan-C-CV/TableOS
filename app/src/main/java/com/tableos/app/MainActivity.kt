@@ -19,6 +19,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: AppsAdapter
     private lateinit var lightingArea: View
     private var lightingBrightness: Float = 1.0f // 0.0f ~ 1.0f
+    private var lockFocusInAppBar: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,6 +32,21 @@ class MainActivity : AppCompatActivity() {
         }
         recyclerView.adapter = adapter
         recyclerView.layoutManager = GridLayoutManager(this, 1)
+
+        // 在 App Bar 内捕获 DPAD 导航，防止默认焦点搜索越界到亮度区
+        recyclerView.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP -> { moveFocusInAppBar(-1); true }
+                KeyEvent.KEYCODE_DPAD_DOWN -> { moveFocusInAppBar(+1); true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { /* 保持在 App Bar 内 */ true }
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    lockFocusInAppBar = false
+                    lightingArea.requestFocus(); true
+                }
+                else -> false
+            }
+        }
 
         applyLightingBrightness()
         // 初次加载桌面矫正配置（全页面透视变形）
@@ -58,15 +74,23 @@ class MainActivity : AppCompatActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
             val inLighting = lightingArea.hasFocus()
+            val inAppBar = isFocusInAppBar()
+            if (lockFocusInAppBar && !inAppBar) {
+                moveFocusToAppBar()
+                return true
+            }
             when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_UP -> {
                     if (inLighting) { adjustBrightnessBy(+0.1f); return true }
+                    if (inAppBar) { moveFocusInAppBar(-1); return true }
                 }
                 KeyEvent.KEYCODE_DPAD_DOWN -> {
                     if (inLighting) { adjustBrightnessBy(-0.1f); return true }
+                    if (inAppBar) { moveFocusInAppBar(+1); return true }
                 }
                 KeyEvent.KEYCODE_DPAD_RIGHT -> {
                     if (inLighting) { moveFocusToAppBar(); return true }
+                    if (inAppBar) { /* 保持在 App Bar 内，不移出 */ return true }
                 }
                 KeyEvent.KEYCODE_DPAD_LEFT -> {
                     if (isFocusInAppBar()) { lightingArea.requestFocus(); return true }
@@ -89,8 +113,37 @@ class MainActivity : AppCompatActivity() {
 
     private fun moveFocusToAppBar() {
         recyclerView.requestFocus()
+        lockFocusInAppBar = true
         recyclerView.post {
             val v = recyclerView.layoutManager?.findViewByPosition(0)
+            v?.requestFocus()
+        }
+    }
+
+    private fun moveFocusInAppBar(delta: Int) {
+        val itemCount = adapter.itemCount
+        if (itemCount <= 0) return
+
+        // 找到当前在 RecyclerView 内获得焦点的直接子 View
+        val childInRecycler: View? = run {
+            var v: View? = currentFocus
+            while (v != null) {
+                if (v.parent === recyclerView) return@run v
+                v = (v.parent as? View)
+            }
+            null
+        }
+
+        val currentPos = childInRecycler?.let { recyclerView.getChildAdapterPosition(it) }
+            ?: RecyclerView.NO_POSITION
+        val target = when (currentPos) {
+            RecyclerView.NO_POSITION -> 0
+            else -> (currentPos + delta).coerceIn(0, itemCount - 1)
+        }
+
+        recyclerView.scrollToPosition(target)
+        recyclerView.post {
+            val v = recyclerView.layoutManager?.findViewByPosition(target)
             v?.requestFocus()
         }
     }

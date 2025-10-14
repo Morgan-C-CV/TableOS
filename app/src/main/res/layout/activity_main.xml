@@ -48,7 +48,11 @@
             android:padding="0dp"
             android:clipToPadding="false"
             android:focusable="true"
-            android:focusableInTouchMode="true" />
+            android:focusableInTouchMode="true"
+            android:nextFocusUp="@id/apps_recycler"
+            android:nextFocusDown="@id/apps_recycler"
+            android:nextFocusRight="@id/apps_recycler"
+            android:nextFocusLeft="@id/lighting_area" />
     </LinearLayout>
 
 </com.tableos.app.KeystoneWarpLayout>
