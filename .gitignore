@@ -31,3 +31,38 @@ settings_build_full.log
 *.pem
 *.p12
 *.key
+
+# OpenCV SDK and related files
+OpenCV-android-sdk/
+opencv-*.zip
+opencv-mobile-*.zip
+
+# CMake build artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+
+# Native build outputs
+*.so
+*.a
+*.o
+**/build/
+**/output/
+
+# NDK build artifacts
+obj/
+libs/
+jni/
+
+# IDE generated files
+.vscode/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.log

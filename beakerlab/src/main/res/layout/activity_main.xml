@@ -32,6 +32,25 @@
             android:layout_gravity="bottom|end"
             android:layout_margin="16dp" />
 
+        <Button
+            android:id="@+id/test_shape_detection_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="测试形状检测"
+            android:layout_gravity="bottom|start"
+            android:layout_margin="16dp" />
+
+        <!-- 用于显示检测结果的 ImageView -->
+        <ImageView
+            android:id="@+id/detection_result_view"
+            android:layout_width="200dp"
+            android:layout_height="200dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="16dp"
+            android:background="#80000000"
+            android:scaleType="fitCenter"
+            android:visibility="gone" />
+
     </FrameLayout>
 
 </com.tableos.beakerlab.KeystoneWarpLayout>

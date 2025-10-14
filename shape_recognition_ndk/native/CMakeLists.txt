@@ -8,6 +8,9 @@ project("shape_detector_ndk")
 # You can define multiple libraries, and CMake builds them for you.
 # Gradle automatically packages shared libraries with your APK.
 
+# Set OpenCV path
+set(OpenCV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../OpenCV-android-sdk/sdk/native/jni")
+
 # Find required packages
 find_package(OpenCV REQUIRED)
 
