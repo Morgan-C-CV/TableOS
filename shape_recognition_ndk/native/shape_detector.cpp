@@ -261,7 +261,8 @@ DetectionResult detectShapes(const cv::Mat& image, bool debug) {
         cv::Mat colorMask = detectColorRegions(hsv, colorRange);
         
         if (debug) {
-            cv::imshow(colorName + " Mask", colorMask);
+            // cv::imshow is not supported on Android platform
+            std::cout << "Debug: Processing " << colorName << " color mask" << std::endl;
         }
         
         // 查找轮廓
@@ -318,10 +319,12 @@ DetectionResult detectShapes(const cv::Mat& image, bool debug) {
     result.annotatedImage = annotateShapes(image, result.shapes);
     result.success = !result.shapes.empty();
     
+    // Note: cv::imshow is not supported on Android platform
+    // Debug visualization should be handled by the calling application
     if (debug) {
-        cv::imshow("Detection Result", result.annotatedImage);
-        cv::waitKey(0);
-        cv::destroyAllWindows();
+        // On Android, the annotated image will be returned to the calling application
+        // for display purposes instead of using cv::imshow
+        std::cout << "Debug mode: annotated image generated for display" << std::endl;
     }
     
     return result;
