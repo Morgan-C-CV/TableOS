@@ -24,6 +24,7 @@ class InputRecognitionTestFragment : Fragment() {
     private lateinit var overlay: RecognitionOverlayView
     private lateinit var resultText: TextView
 
+    private var warpLayout: KeystoneWarpLayout? = null
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
     private var previewRequestBuilder: CaptureRequest.Builder? = null
@@ -48,6 +49,10 @@ class InputRecognitionTestFragment : Fragment() {
         overlay = view.findViewById(R.id.overlay_view)
         resultText = view.findViewById(R.id.result_text)
 
+        // 禁用设置页根布局的 Keystone 变形，避免相机预览被二次变形造成边缘留白/梯形
+        warpLayout = requireActivity().findViewById(R.id.keystone_root)
+        warpLayout?.setWarpEnabled(false)
+
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -57,19 +62,16 @@ class InputRecognitionTestFragment : Fragment() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 进入识别页时确保禁用显示矫正
+        warpLayout = requireActivity().findViewById(R.id.keystone_root)
+        warpLayout?.setWarpEnabled(false)
+    }
+
     private fun startPreviewWhenReady() {
-        if (textureView.isAvailable) {
-            openCamera()
-        } else {
-            textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                    openCamera()
-                }
-                override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
-                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean { return true }
-                override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
-            }
-        }
+        // 不需要预览，直接打开摄像头用于识别
+        openCamera()
     }
 
     private fun openCamera() {
@@ -99,30 +101,22 @@ class InputRecognitionTestFragment : Fragment() {
 
     private fun createPreviewSession() {
         val device = cameraDevice ?: return
-        val surfaceTexture = textureView.surfaceTexture ?: return
-        // 优先选择较小且支持的 YUV 输出尺寸，避免高分辨率导致卡顿
+        // 仅使用离屏 ImageReader，不创建可见预览 Surface
         var (width, height) = chooseYuvSize() ?: Pair(640, 480)
-        // YUV_420_888/NV21 要求偶数尺寸，必要时做向下取偶
         if ((width and 1) == 1) width -= 1
         if ((height and 1) == 1) height -= 1
-        previewWidth = width
-        previewHeight = height
-        // 计算需要应用到 TextureView 的旋转角度，保证显示正向且比例不失真
+
         runCatching {
             val manager = requireContext().getSystemService(CameraManager::class.java)
             val characteristics = manager.getCameraCharacteristics(device.id)
             appliedRotation = computeTotalRotation(characteristics)
         }.onFailure { appliedRotation = 0 }
 
-        surfaceTexture.setDefaultBufferSize(previewWidth, previewHeight)
-        val previewSurface = Surface(surfaceTexture)
-
-        // ImageReader for YUV_420_888 frames
         imageReader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 4)
         imageReader?.setOnImageAvailableListener({ reader ->
             val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
             val now = System.nanoTime()
-            if (!processing && now - lastProcessNs > 80_000_000) { // ~12.5 FPS 节流
+            if (!processing && now - lastProcessNs > 80_000_000) {
                 processing = true
                 lastProcessNs = now
                 try { processImage(image) } catch (_: Exception) {} finally { processing = false }
@@ -132,28 +126,25 @@ class InputRecognitionTestFragment : Fragment() {
 
         try {
             previewRequestBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                addTarget(previewSurface)
                 imageReader?.surface?.let { addTarget(it) }
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                 set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
             }
 
-            val targets = mutableListOf<Surface>(previewSurface)
+            val targets = mutableListOf<Surface>()
             imageReader?.surface?.let { targets.add(it) }
             device.createCaptureSession(targets, object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
                     if (cameraDevice == null) return
                     captureSession = session
                     try { previewRequestBuilder?.build()?.let { session.setRepeatingRequest(it, null, backgroundHandler) } } catch (_: Exception) {}
-                    // 根据当前视图大小与预览缓冲尺寸，应用矩阵变换，确保不拉伸且按需旋转
-                    runCatching { configureTransform(textureView.width, textureView.height) }
                 }
                 override fun onConfigureFailed(session: CameraCaptureSession) {
-                    Toast.makeText(requireContext(), "预览会话创建失败", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), "会话创建失败", Toast.LENGTH_SHORT).show()
                 }
             }, backgroundHandler)
         } catch (e: Exception) {
-            Toast.makeText(requireContext(), "创建预览异常：${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), "创建会话异常：${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -176,31 +167,23 @@ class InputRecognitionTestFragment : Fragment() {
     }
 
     private fun configureTransform(viewWidth: Int, viewHeight: Int) {
-        if (previewWidth == 0 || previewHeight == 0) return
+        // 简化并增强鲁棒性：使用视图旋转属性，避免复杂矩阵导致内容完全移出视域
+        if (viewWidth == 0 || viewHeight == 0 || previewWidth == 0 || previewHeight == 0) {
+            // 视图尚未布局或预览尺寸未知，重置为默认
+            textureView.setTransform(null)
+            textureView.rotation = 0f
+            return
+        }
         val rotation = appliedRotation
-        val matrix = Matrix()
-        val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        // 缓冲区在 90/270 度时宽高对调
-        val bufferRect = if (rotation == 90 || rotation == 270) {
-            RectF(0f, 0f, previewHeight.toFloat(), previewWidth.toFloat())
-        } else {
-            RectF(0f, 0f, previewWidth.toFloat(), previewHeight.toFloat())
+        // 设定默认缓冲大小匹配当前预览尺寸，避免缩放失真
+        textureView.setTransform(null)
+        // 使用视图层旋转，系统负责内容居中与裁剪
+        textureView.rotation = when (rotation) {
+            90 -> 90f
+            180 -> 180f
+            270 -> 270f
+            else -> 0f
         }
-        val centerX = viewRect.centerX()
-        val centerY = viewRect.centerY()
-        if (rotation == 90 || rotation == 270) {
-            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
-            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
-            val scale = kotlin.math.max(
-                viewHeight.toFloat() / previewHeight.toFloat(),
-                viewWidth.toFloat() / previewWidth.toFloat()
-            )
-            matrix.postScale(scale, scale, centerX, centerY)
-            matrix.postRotate(rotation.toFloat(), centerX, centerY)
-        } else if (rotation == 180) {
-            matrix.postRotate(180f, centerX, centerY)
-        }
-        textureView.setTransform(matrix)
     }
 
     private fun chooseYuvSize(): Pair<Int, Int>? {
@@ -240,8 +223,8 @@ class InputRecognitionTestFragment : Fragment() {
         // 根据旋转后的显示尺寸进行缩放计算
         val dispW = if (appliedRotation == 90 || appliedRotation == 270) height else width
         val dispH = if (appliedRotation == 90 || appliedRotation == 270) width else height
-        val sx = textureView.width.toFloat() / dispW
-        val sy = textureView.height.toFloat() / dispH
+        val sx = overlay.width.toFloat() / dispW
+        val sy = overlay.height.toFloat() / dispH
         for (i in 0 until count) {
             val base = 1 + i * 6
             val cardId = out[base]
@@ -349,12 +332,17 @@ class InputRecognitionTestFragment : Fragment() {
 
     override fun onPause() {
         super.onPause()
+        // 离开页面时恢复显示矫正
+        warpLayout?.setWarpEnabled(true)
         closeCamera()
         stopBackgroundThread()
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
+        // 销毁视图后进一步恢复显示矫正
+        warpLayout?.setWarpEnabled(true)
+        warpLayout = null
         closeCamera()
         stopBackgroundThread()
     }
