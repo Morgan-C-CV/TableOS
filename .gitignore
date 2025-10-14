@@ -19,6 +19,11 @@ captures/
 
 # Logs
 build_log*.txt
+native_build.log
+settings_build_full.log
+
+# Android NDK / externalNativeBuild intermediates
+**/.cxx/
 
 # Signing keys (do not commit secrets)
 *.jks

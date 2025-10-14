@@ -6,15 +6,25 @@ plugins {
 android {
     compileSdk = 34
     namespace "com.tableos.settings"
+    ndkVersion '27.0.12077973'
 
     defaultConfig {
         applicationId "com.tableos.settings"
-        minSdk = 21
+        minSdk = 24
         targetSdk = 30
         versionCode 1
         versionName "0.1.0"
         vectorDrawables {
             useSupportLibrary = true
+        }
+        externalNativeBuild {
+            cmake {
+                // 本机OpenCV-android-sdk路径（来自 SmartProjector/rknn-toolkit2 包）
+                arguments "-DOpenCV_DIR=/Users/wangmorgan/MProject/Android/SmartProjector/rknn-toolkit2/rknpu2/examples/3rdparty/opencv/OpenCV-android-sdk/sdk/native/jni"
+            }
+        }
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
         }
     }
 
@@ -22,6 +32,12 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
         }
     }
 

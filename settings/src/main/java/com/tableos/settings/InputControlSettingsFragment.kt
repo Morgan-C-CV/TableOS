@@ -16,5 +16,14 @@ class InputControlSettingsFragment : PreferenceFragmentCompat() {
                 .commit()
             true
         }
+
+        findPreference<androidx.preference.Preference>("video_input_recog_test")?.setOnPreferenceClickListener {
+            parentFragmentManager
+                .beginTransaction()
+                .replace(R.id.settings_container, InputRecognitionTestFragment())
+                .addToBackStack(null)
+                .commit()
+            true
+        }
     }
 }
