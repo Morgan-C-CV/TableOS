@@ -6,7 +6,9 @@
 #    include <opencv2/core.hpp>
 #    include <opencv2/imgproc.hpp>
 #    include <opencv2/imgcodecs.hpp>
-#    include <opencv2/highgui.hpp>
+#    ifndef __ANDROID__
+#      include <opencv2/highgui.hpp>
+#    endif
 #    define HAVE_OPENCV 1
 #  else
 #    define HAVE_OPENCV 0
@@ -16,7 +18,9 @@
 #    include <opencv2/core.hpp>
 #    include <opencv2/imgproc.hpp>
 #    include <opencv2/imgcodecs.hpp>
-#    include <opencv2/highgui.hpp>
+#    ifndef __ANDROID__
+#      include <opencv2/highgui.hpp>
+#    endif
 #    ifndef HAVE_OPENCV
 #      define HAVE_OPENCV 1
 #    endif

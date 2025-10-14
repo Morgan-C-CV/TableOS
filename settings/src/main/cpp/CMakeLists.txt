@@ -8,14 +8,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../../../cv_android_ndk_package/native)
+# Add CV package as subdirectory, but exclude CLI tools
+set(BUILD_CLI_TOOLS OFF CACHE BOOL "Build CLI tools" FORCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../../cv_android_ndk_package/native cv_package)
 
-add_library(projectioncards SHARED
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cv_android_ndk_package/native/card_encoder_decoder.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cv_android_ndk_package/native/card_encoder_decoder_c_api.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cv_android_ndk_package/native/image_processing.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cv_android_ndk_package/native/dot_card_detect.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cv_android_ndk_package/native/detect_decode_api.cpp
+# Create our JNI bridge library
+add_library(tableos_settings_native SHARED
         ${CMAKE_CURRENT_SOURCE_DIR}/bridge_jni.cpp)
 
-target_link_libraries(projectioncards ${OpenCV_LIBS})
+# Link with the projectioncards library from CV package
+target_link_libraries(tableos_settings_native 
+        projectioncards 
+        ${OpenCV_LIBS})

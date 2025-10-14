@@ -28,15 +28,19 @@ target_link_libraries(projectioncards
 )
 
 # CLI tool to run detection+decode on an image and print card IDs
-add_executable(detect_decode_cli
-    detect_decode_cli.cpp
-)
+# Only build CLI tool if not on Android or if explicitly requested
+option(BUILD_CLI_TOOLS "Build CLI tools" ON)
+if(BUILD_CLI_TOOLS AND NOT ANDROID)
+    add_executable(detect_decode_cli
+        detect_decode_cli.cpp
+    )
 
-target_include_directories(detect_decode_cli PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)
+    target_include_directories(detect_decode_cli PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+    )
 
-target_link_libraries(detect_decode_cli
-    projectioncards
-    ${OpenCV_LIBS}
-)
+    target_link_libraries(detect_decode_cli
+        projectioncards
+        ${OpenCV_LIBS}
+    )
+endif()

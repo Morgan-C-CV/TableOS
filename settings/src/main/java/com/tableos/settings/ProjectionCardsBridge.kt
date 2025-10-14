@@ -4,7 +4,7 @@ object ProjectionCardsBridge {
     private var loaded: Boolean = false
     init {
         try {
-            System.loadLibrary("projectioncards")
+            System.loadLibrary("tableos_settings_native")
             loaded = true
         } catch (e: UnsatisfiedLinkError) {
             // Native lib未加载时，仍然提供空实现避免崩溃

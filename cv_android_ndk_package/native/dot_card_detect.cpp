@@ -24,11 +24,13 @@ cv::Mat dotPreprocess(const cv::Mat& img, bool debug) {
     cv::Mat threshold = result.second;
     
     if (debug) {
+#ifndef __ANDROID__
         cv::imshow("original", img);
         cv::imshow("grayscale", grayscale);
         cv::imshow("threshold", threshold);
         cv::waitKey(0);
         cv::destroyAllWindows();
+#endif
     }
     
     return threshold;
@@ -617,13 +619,17 @@ void showColorMasks(const cv::Mat& hsv, const std::map<std::string, ColorRange>&
                 cv::inRange(hsv, redIt->second.lower, redIt->second.upper, redMask1);
                 cv::inRange(hsv, colorRange.lower, colorRange.upper, redMask2);
                 cv::bitwise_or(redMask1, redMask2, mask);
+#ifndef __ANDROID__
                 cv::imshow("Red mask", mask);
+#endif
             }
         } else if (colorName == "Red") {
             continue;
         } else {
             cv::inRange(hsv, colorRange.lower, colorRange.upper, mask);
+#ifndef __ANDROID__
             cv::imshow(colorName + " mask", mask);
+#endif
         }
     }
 }
@@ -927,9 +933,11 @@ DetectionResult detectDotCards(const cv::Mat& img, bool debug) {
     
     if (debug) {
         showColorMasks(hsv, colorRanges);
+#ifndef __ANDROID__
         cv::imshow("original", img);
         cv::waitKey(0);
         cv::destroyAllWindows();
+#endif
     }
     
     cv::Mat imgThreshold = dotPreprocess(img, debug);
@@ -1166,9 +1174,11 @@ DetectionResult detectDotCards(const cv::Mat& img, bool debug) {
     }
 
     if (debug) {
+#ifndef __ANDROID__
         cv::imshow("rect_mask", result.rectMask);
         cv::imshow("original", imgCopy);
         cv::imshow("all_dot_mask", result.dotMask);
+#endif
         
 
         std::cout << "\n=== Dot Mask ROI Analysis ===" << std::endl;
@@ -1232,16 +1242,20 @@ DetectionResult detectDotCards(const cv::Mat& img, bool debug) {
             
 
             std::string windowName = "Dot ROI " + std::to_string(i + 1);
+#ifndef __ANDROID__
             cv::imshow(windowName, visualImage);
 
             std::string roiWindowName = "Original ROI " + std::to_string(i + 1);
             std::string maskWindowName = "Mask " + std::to_string(i + 1);
             cv::imshow(roiWindowName, roiImage);
             cv::imshow(maskWindowName, roiMask);
+#endif
         }
         
+#ifndef __ANDROID__
         cv::waitKey(0);
         cv::destroyAllWindows();
+#endif
     }
     
     result.success = !result.rectangles.empty();

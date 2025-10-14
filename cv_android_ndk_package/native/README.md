@@ -105,29 +105,73 @@ Android NDK 功能包（Projection Cards）
 调试与 CLI 输出（可选）
 - 本包提供示例 CLI `detect_decode_cli`（在桌面或开发机上构建）用于可视化与 JSON 输出：
   ```bash
-  ./detect_decode_cli path/to/image.png --cards_json --rectangles_json
+  ./detect_decode_cli path/to/image.png
   ```
-- Rectangles JSON 的角度定义：
-  - 角点顺序为 `Corner1=TL, Corner2=TR, Corner3=BR, Corner4=BL`，`center` 为中心点。
-  - 方向角 `angle` 使用“左下到左上（BL→TL）的向量”相对垂直方向的偏移角度，逆时针为正、顺时针为负。
-  - 示例：
+
+- CLI 输出格式说明：
+  1. **检测过程信息**：显示颜色检测、角点识别等详细过程
+  2. **卡片统计**：`Detected cards: N` 显示检测到的卡片数量
+  3. **卡片信息**：每张卡片的ID、组别、包围盒和颜色信息
+     ```
+     #0 id: 141 group: 0 bbox: [13,14,264,387] colors: (-1,-1,-1,-1)
+     ```
+  4. **角点颜色信息**：每个矩形的四个角点颜色索引（0=Red，1=Yellow，2=Green，3=Cyan，4=Blue，5=Indigo，-1=未识别）
+     ```
+     Rectangles corner colors:
+     Rect1:
+       Corner1: 0
+       Corner2: 1
+       Corner3: -1
+       Corner4: 0
+     ```
+  5. **JSON 输出**：完整的矩形几何信息
+
+- **Rectangles JSON 格式**：
+  - **四角点卡片**（完整检测）：
+    - 角点顺序为 `Corner1=TL, Corner2=TR, Corner3=BR, Corner4=BL`，`center` 为中心点
+    - 方向角 `angle` 使用"左下到左上（BL→TL）的向量"相对垂直方向的偏移角度，逆时针为正、顺时针为负
     ```json
     {
       "Rect1": {
         "id": 141,
         "posi": {
-          "Corner1": [xTL, yTL],
-          "Corner2": [xTR, yTR],
-          "Corner3": [xBR, yBR],
-          "Corner4": [xBL, yBL],
-          "center": [cx, cy]
+          "Corner1": [1271, 345],
+          "Corner2": [1772, 572],
+          "Corner3": [1434, 1316],
+          "Corner4": [933, 1089],
+          "center": [1352, 830]
         },
-        "angle": -14.0,
-        "direction": -14.0
+        "angle": -24.432,
+        "direction": -24.432
       }
     }
     ```
-- 该 CLI 输出仅用于调试与验证几何；Android 端默认通过 C API 获取卡片 ID 与包围盒。
+  
+  - **单角点卡片**（新增功能）：
+    - 当只检测到单个角点时，系统会基于角点的边界框生成完整的矩形输出
+    - 四个角点坐标基于边界框计算，角度固定为 0.0
+    ```json
+    {
+      "Rect1": {
+        "id": 141,
+        "posi": {
+          "Corner1": [13, 14],
+          "Corner2": [263, 14],
+          "Corner3": [263, 386],
+          "Corner4": [13, 386],
+          "center": [138, 200]
+        },
+        "angle": 0.000,
+        "direction": 0.000
+      }
+    }
+    ```
+
+- **输出特性**：
+  - 支持混合输出：同一次检测可能包含完整的四角点卡片和单角点卡片
+  - 单角点处理：确保即使只检测到部分角点也能输出完整的矩形信息
+  - ID 一致性：单角点使用原始角点的 ID，保持数据的连续性
+  - 该 CLI 输出仅用于调试与验证几何；Android 端默认通过 C API 获取卡片 ID 与包围盒
 
 常见问题
 - OpenCV 找不到：请确认 `OpenCV_DIR` 指向 `OpenCV-android-sdk/sdk/native/jni`，并在 CMake 中 `find_package(OpenCV REQUIRED)`。
