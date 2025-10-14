@@ -2,6 +2,10 @@ package com.tableos.settings
 
 import android.os.Bundle
 import android.util.Log
+import android.os.Build
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
@@ -13,6 +17,9 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
         Log.i(TAG, "onCreate: contentView set, root=${findViewById<android.view.View>(R.id.keystone_root)?.javaClass}")
+
+        // 进入设置页即启用沉浸式，隐藏系统状态栏与导航栏
+        enableImmersiveMode()
 
         // 注册 Fragment 生命周期日志，定位页面切换与校正页行为
         supportFragmentManager.registerFragmentLifecycleCallbacks(object : FragmentManager.FragmentLifecycleCallbacks() {
@@ -57,6 +64,9 @@ class SettingsActivity : AppCompatActivity() {
             findViewById<KeystoneWarpLayout>(R.id.keystone_root)?.loadConfig()
             Log.i(TAG, "onResume: loadConfig invoked")
         } catch (_: Exception) { /* ignore */ }
+
+        // 保持沉浸式，防止系统栏在切换后重新出现
+        enableImmersiveMode()
     }
 
     override fun onStart() {
@@ -82,5 +92,25 @@ class SettingsActivity : AppCompatActivity() {
     override fun onBackPressed() {
         Log.i(TAG, "onBackPressed: delegating to super")
         super.onBackPressed()
+    }
+
+    private fun enableImmersiveMode() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            val controller = window.insetsController
+            controller?.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+            controller?.systemBarsBehavior =
+                WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            )
+        }
     }
 }

@@ -3,6 +3,10 @@ package com.lenslab
 import android.graphics.Color
 import android.os.Bundle
 import android.view.KeyEvent
+import android.os.Build
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
 import com.lenslab.ui.OpticsView
@@ -15,6 +19,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // 进入 LensLab 即启用沉浸式，隐藏系统状态栏与导航栏
+        enableImmersiveMode()
 
         opticsView = findViewById(R.id.optics_view)
         val btnEmitter = findViewById<Button>(R.id.btn_add_emitter)
@@ -98,6 +105,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // 加载并应用桌面透视配置
         findViewById<KeystoneWarpLayout>(R.id.keystone_root)?.loadConfig()
+        // 保持沉浸式，防止系统栏在切换后重新出现
+        enableImmersiveMode()
     }
 
     private fun applyCanvasBrightness() {
@@ -123,5 +132,25 @@ class MainActivity : AppCompatActivity() {
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    private fun enableImmersiveMode() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            val controller = window.insetsController
+            controller?.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+            controller?.systemBarsBehavior =
+                WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            )
+        }
     }
 }

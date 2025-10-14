@@ -6,7 +6,12 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AlertDialog
 import android.graphics.Color
 import android.view.KeyEvent
+import android.os.Build
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import kotlin.math.roundToInt
+// 使用本模块内的 KeystoneWarpLayout（com.tableos.beakerlab.KeystoneWarpLayout）
 
 class MainActivity : AppCompatActivity() {
     private val TAG = "BeakerMain"
@@ -17,6 +22,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         Log.i(TAG, "onCreate")
+
+        // 进入 BeakerLab 即启用沉浸式，隐藏系统状态栏与导航栏
+        enableImmersiveMode()
 
         lightingArea = findViewById(R.id.lighting_area)
         val canvas = findViewById<BeakerCanvasView>(R.id.canvas)
@@ -44,6 +52,8 @@ class MainActivity : AppCompatActivity() {
                 .show()
         }
     }
+
+    
 
     private fun applyLightingBrightness() {
         val v = (lightingBrightness.coerceIn(0f, 1f) * 255f).roundToInt()
@@ -76,5 +86,27 @@ class MainActivity : AppCompatActivity() {
             Log.i(TAG, "onResume: load keystone config")
             findViewById<KeystoneWarpLayout>(R.id.keystone_root)?.loadConfig()
         } catch (_: Exception) { /* ignore */ }
+        // 保持沉浸式，防止系统栏在切换后重新出现
+        enableImmersiveMode()
+    }
+}
+
+private fun AppCompatActivity.enableImmersiveMode() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        window.setDecorFitsSystemWindows(false)
+        val controller = window.insetsController
+        controller?.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+        controller?.systemBarsBehavior =
+            WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    } else {
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+        )
     }
 }

@@ -1,14 +1,58 @@
 #ifndef DOT_CARD_DETECT_H
 #define DOT_CARD_DETECT_H
 
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/imgcodecs.hpp>
+// 统一的 OpenCV 可用性检测与条件包含
+#ifndef HAVE_OPENCV
+#  if defined(__has_include)
+#    if __has_include(<opencv2/core.hpp>)
+#      define HAVE_OPENCV 1
+#    else
+#      define HAVE_OPENCV 0
+#    endif
+#  else
+     // 某些静态分析器不支持 __has_include；在未明确声明时默认关闭
+#    define HAVE_OPENCV 0
+#  endif
+#endif
+
+#if HAVE_OPENCV
+#  include <opencv2/core.hpp>
+#  include <opencv2/imgproc.hpp>
+#  include <opencv2/imgcodecs.hpp>
+#endif
+
+// 高级GUI（highgui）仅在 OpenCV 可用且头存在时启用
+#if HAVE_OPENCV
+#  if defined(__has_include)
+#    if __has_include(<opencv2/highgui.hpp>)
+#      include <opencv2/highgui.hpp>
+#      define HAVE_OPENCV_HIGHGUI 1
+#    else
+#      define HAVE_OPENCV_HIGHGUI 0
+#    endif
+#  else
+#    define HAVE_OPENCV_HIGHGUI 0
+#  endif
+#else
+#  define HAVE_OPENCV_HIGHGUI 0
+#endif
+
+#if !HAVE_OPENCV
+// 轻量级占位声明，便于 IDE 在缺少 OpenCV 头文件时避免诊断错误
+namespace cv {
+  struct Point { int x; int y; Point(int xx=0,int yy=0):x(xx),y(yy){} };
+  struct Point2f { float x; float y; Point2f(float xx=0.f,float yy=0.f):x(xx),y(yy){} };
+  struct Rect { int x; int y; int width; int height; Rect(int xx=0,int yy=0,int w=0,int h=0):x(xx),y(yy),width(w),height(h){} };
+  struct Mat { int cols=0; int rows=0; bool empty() const { return cols==0||rows==0; } };
+  struct Scalar { double v0,v1,v2; Scalar(double a=0.0,double b=0.0,double c=0.0):v0(a),v1(b),v2(c){} };
+}
+#endif
 #include <vector>
 #include <map>
 #include <string>
 #include <utility>
 #include <iostream>
+#include <tuple>
 
 namespace DotCardDetect {
 

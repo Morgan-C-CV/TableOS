@@ -26,3 +26,17 @@ target_include_directories(projectioncards PUBLIC
 target_link_libraries(projectioncards
     ${OpenCV_LIBS}
 )
+
+# CLI tool to run detection+decode on an image and print card IDs
+add_executable(detect_decode_cli
+    detect_decode_cli.cpp
+)
+
+target_include_directories(detect_decode_cli PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(detect_decode_cli
+    projectioncards
+    ${OpenCV_LIBS}
+)

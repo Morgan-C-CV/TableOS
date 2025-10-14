@@ -1,41 +1,140 @@
-Android NDK package for Projection Cards
+Android NDK 功能包（Projection Cards）
 
-Overview
-- This package bundles the C/C++ decoder and dot-card detection logic (OpenCV-based) for Android.
-- You can copy `android_ndk_package/native` into your Android app under `app/src/main/cpp` and build a native library.
+概述
+- 提供点卡检测与编码解码的原生实现（OpenCV），用于在 Android App 中实时识别卡片并获取其 ID 与包围盒。
+- 该目录可直接拷贝到你的 Android 项目中，通过 CMake 构建出共享库 `projectioncards` 并在 JNI 中调用。
 
-Contents
-- Headers: `card_encoder_decoder.h`, `card_encoder_decoder_c_api.h`, `dot_card_detect.h`, `image_processing.h`, `detect_decode_api.h`
-- Sources: `card_encoder_decoder.cpp`, `card_encoder_decoder_c_api.cpp`, `dot_card_detect.cpp`, `image_processing.cpp`, `detect_decode_api.cpp`
-- Build: Minimal `CMakeLists.txt` for building `projectioncards` native library
+目录结构
+- 头文件：`detect_decode_api.h`、`card_encoder_decoder_c_api.h`、`dot_card_detect.h`、`image_processing.h`
+- 源码：`detect_decode_api.cpp`、`card_encoder_decoder_c_api.cpp`、`card_encoder_decoder.cpp`、`dot_card_detect.cpp`、`image_processing.cpp`
+- 构建：`CMakeLists.txt`（生成共享库 `projectioncards`）
 
-Prerequisites
-- Android NDK configured in your project (`android.defaultConfig.externalNativeBuild`)
-- OpenCV Android SDK (download and unzip, set `OpenCV_DIR` in CMake or Gradle)
+依赖与环境
+- Android NDK（建议 r25 及以上）
+- OpenCV Android SDK（需提供 `OpenCV_DIR`）
+- 最低 API/ABI：根据你的 App 目标设定；请在 Gradle 的 `abiFilters` 中添加所需架构（例如 `arm64-v8a`、`armeabi-v7a`）。
 
-Integration Steps
-1) Copy folder:
-   - Move `android_ndk_package/native` to your app module: `app/src/main/cpp`
+集成步骤（Android App）
+1) 拷贝目录：
+   - 将 `android_ndk_package/native` 拷贝到应用模块，例如：`app/src/main/cpp`。
 
-2) Connect CMake in `app/build.gradle`:
-   - externalNativeBuild.cmake points to `src/main/cpp/CMakeLists.txt`
-   - Ensure `abiFilters` cover your target ABIs
+2) Gradle 连接 CMake（示例）：
+   - 在 `app/build.gradle` 中：
+     ```groovy
+     android {
+       defaultConfig {
+         externalNativeBuild {
+           cmake {
+             // 传递 OpenCV 的路径（替换为你的实际路径）
+             arguments "-DOpenCV_DIR=/absolute/path/OpenCV-android-sdk/sdk/native/jni"
+           }
+         }
+         ndk {
+           abiFilters "arm64-v8a", "armeabi-v7a"
+         }
+       }
+       externalNativeBuild {
+         cmake { path "src/main/cpp/CMakeLists.txt" }
+       }
+     }
+     ```
 
-3) Provide OpenCV path:
-   - Option A (Gradle): add `arguments "-DOpenCV_DIR=/path/to/OpenCV-android-sdk/sdk/native/jni"`
-   - Option B (Local build): export `OpenCV_DIR` environment variable
+3) CMake 配置（示例）：
+   - 在 `app/src/main/cpp/CMakeLists.txt` 中确保引入本包的源码或把本目录作为子工程；本包自带的 `CMakeLists.txt` 会生成 `projectioncards`：
+     ```cmake
+     # 假设已设置 OpenCV_DIR
+     find_package(OpenCV REQUIRED)
+     add_subdirectory(${CMAKE_SOURCE_DIR}/src/main/cpp) # 或将本目录纳入
+     # 最终在目标应用中链接
+     target_link_libraries(your_native_target PRIVATE projectioncards ${OpenCV_LIBS})
+     ```
 
-4) JNI usage (example)
-   - Create a JNI bridge file (Kotlin/Java) that loads `projectioncards` and calls C API:
-     - `System.loadLibrary("projectioncards")`
-     - native methods:
-       - `int detectDecodeCardsNV21(byte[] nv21, int width, int height, int rotation, DetectedCard[] out)`
+4) 在 App 中加载与调用（JNI/Java 示例）：
+   - 加载库：
+     ```java
+     static {
+       System.loadLibrary("projectioncards");
+     }
+     ```
+   - 定义与调用原生方法：
+     ```java
+     // 与 C API 的结构保持一致
+     public static class DetectedCard {
+       public int card_id;    // -1 表示未解码
+       public int group_type; // 0=A,1=B,-1=未知
+       public int tl_x, tl_y, br_x, br_y; // 包围盒（左上/右下）
+     }
 
-5) Frame conversion
-   - If using Camera2 producing NV21, call `detect_decode_cards_nv21` which converts to BGR internally.
-   - Or convert to ARGB8888 and then to BGR8 yourself; then call `detect_decode_cards_bgr8`.
+     // NV21 输入（Camera2 通常产出此格式）
+     public static native int detectDecodeCardsNV21(byte[] nv21, int width, int height,
+                                                    DetectedCard[] outCards, int maxOutCards);
 
-Notes
-- Colors mapping: 0=Red,1=Yellow,2=Green,3=Cyan,4=Blue,5=Indigo
-- Marker bit order assumed: Left=bits 1,2; Top=bits 3,4
-- The decoder auto-detects A/B group via `card_decode_encoding`
+     // BGR8 输入（如你自己做颜色转换）
+     public static native int detectDecodeCardsBGR8(byte[] bgr, int width, int height,
+                                                    DetectedCard[] outCards, int maxOutCards);
+     ```
+   - 对应的 C API（来自 `detect_decode_api.h`）：
+     ```c
+     typedef struct {
+       int card_id;
+       int group_type; // 0=A,1=B,-1=unknown
+       int tl_x, tl_y, br_x, br_y; // bounding box
+     } DetectedCard;
+
+     int detect_decode_cards_nv21(const unsigned char* nv21, int width, int height,
+                                  DetectedCard* out_cards, int max_out_cards);
+
+     int detect_decode_cards_bgr8(const unsigned char* bgr, int width, int height,
+                                  DetectedCard* out_cards, int max_out_cards);
+     ```
+   - 运行流程建议：
+     - 从 Camera2 获取 NV21 帧，开线程调用 `detectDecodeCardsNV21`。
+     - 返回的 `DetectedCard` 中 `card_id` 为解码到的卡片 ID（未解码则为 -1），`group_type` 表示 A/B 组别。
+     - 使用 `tl_x, tl_y, br_x, br_y` 在画面上绘制包围框或进行后续业务处理。
+
+技术细节说明
+- 检测与解码管线：
+  - 先通过 OpenCV 的轮廓与几何规则在图像中寻找候选矩形（角点标记），再将四个角点配对成一张卡片。
+  - 解码时会在扩展区域内统计角点颜色，生成编码比特，使用 `card_encoder_decoder_c_api.h` 中的解码器验证并得到 `card_id` 与 `group_type`。
+  - C API 返回的是卡片包围盒与 ID；如需完整几何与角度，可用 CLI 查看（见下文）。
+- 颜色索引与含义：0=Red，1=Yellow，2=Green，3=Cyan，4=Blue，5=Indigo（内部已考虑红色的双阈值）。
+- 性能建议：
+  - 将检测调用放在单独线程，尽量复用缓冲区；移动端上建议 NV21→BGR 转换由本库完成（更少拷贝）。
+  - `max_out_cards` 建议根据你的应用场景设置（例如 8），超过值的检测结果将被截断。
+
+调试与 CLI 输出（可选）
+- 本包提供示例 CLI `detect_decode_cli`（在桌面或开发机上构建）用于可视化与 JSON 输出：
+  ```bash
+  ./detect_decode_cli path/to/image.png --cards_json --rectangles_json
+  ```
+- Rectangles JSON 的角度定义：
+  - 角点顺序为 `Corner1=TL, Corner2=TR, Corner3=BR, Corner4=BL`，`center` 为中心点。
+  - 方向角 `angle` 使用“左下到左上（BL→TL）的向量”相对垂直方向的偏移角度，逆时针为正、顺时针为负。
+  - 示例：
+    ```json
+    {
+      "Rect1": {
+        "id": 141,
+        "posi": {
+          "Corner1": [xTL, yTL],
+          "Corner2": [xTR, yTR],
+          "Corner3": [xBR, yBR],
+          "Corner4": [xBL, yBL],
+          "center": [cx, cy]
+        },
+        "angle": -14.0,
+        "direction": -14.0
+      }
+    }
+    ```
+- 该 CLI 输出仅用于调试与验证几何；Android 端默认通过 C API 获取卡片 ID 与包围盒。
+
+常见问题
+- OpenCV 找不到：请确认 `OpenCV_DIR` 指向 `OpenCV-android-sdk/sdk/native/jni`，并在 CMake 中 `find_package(OpenCV REQUIRED)`。
+- ABI/架构不匹配：在 `abiFilters` 中加入目标架构；确保第三方库（如 OpenCV `.so`）同样包含这些架构。
+- 返回 `card_id=-1`：说明此帧未成功解码（颜色识别不足或角点不完整），可提高拍摄分辨率与曝光、减少运动模糊。
+- 帧格式：若不是 NV21，请自行转换为 BGR8 后调用 `detect_decode_cards_bgr8`。
+
+许可与扩展
+- 本包不包含 Android UI；你可以在 Java/Kotlin 层自由绘制 Overlay 或结合业务逻辑。
+- 如需在 Android 端直接拿到角点坐标与角度，可在 JNI 层补充接口，调用 `dot_card_detect` 产生的卡片几何并以自定义结构返回。
