@@ -30,10 +30,13 @@ std::map<std::string, ColorRange> getDefaultColorRanges() {
 }
 
 cv::Mat preprocessImage(const cv::Mat& image) {
-    cv::Mat blurred, gray;
+    cv::Mat rotated, blurred;
+    
+    // 校正相机旋转：逆时针旋转90度来校正顺时针旋转的相机画面
+    cv::rotate(image, rotated, cv::ROTATE_90_COUNTERCLOCKWISE);
     
     // 高斯模糊减少噪声
-    cv::GaussianBlur(image, blurred, cv::Size(5, 5), 0);
+    cv::GaussianBlur(rotated, blurred, cv::Size(5, 5), 0);
     
     return blurred;
 }
