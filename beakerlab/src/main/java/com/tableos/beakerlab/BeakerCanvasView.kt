@@ -81,6 +81,20 @@ class BeakerCanvasView @JvmOverloads constructor(
     // 形状边框标注相关
     private val detectedShapes = mutableListOf<DetectedElement>()
     
+    // 化学卡片动画相关
+    private data class AnimatedChemicalCard(
+        val element: DetectedElement,
+        val startTime: Long,
+        var alpha: Float = 0f,
+        var isVisible: Boolean = true,
+        var lastUpdateTime: Long = System.currentTimeMillis()
+    )
+    
+    private val animatedCards = mutableMapOf<Int, AnimatedChemicalCard>()
+    private val fadeInDuration = 500L // 淡入时间 500ms
+    private val fadeOutDuration = 300L // 淡出时间 300ms
+    private val cardLifetime = 2500L // 卡片生命周期 5秒
+    
     // 相机和视图尺寸信息，用于坐标转换
     private var cameraWidth: Int = 0
     private var cameraHeight: Int = 0
@@ -133,6 +147,39 @@ class BeakerCanvasView @JvmOverloads constructor(
     fun updateDetectedShapes(shapes: List<DetectedElement>) {
         detectedShapes.clear()
         detectedShapes.addAll(shapes)
+        
+        val currentTime = System.currentTimeMillis()
+        val newShapeIds = shapes.map { it.id }.toSet()
+        
+        // 更新现有卡片或添加新卡片
+        for (shape in shapes) {
+            if (animatedCards.containsKey(shape.id)) {
+                // 更新现有卡片的元素信息和时间
+                val card = animatedCards[shape.id]!!
+                animatedCards[shape.id] = card.copy(
+                    element = shape,
+                    lastUpdateTime = currentTime,
+                    isVisible = true
+                )
+            } else {
+                // 添加新卡片
+                animatedCards[shape.id] = AnimatedChemicalCard(
+                    element = shape,
+                    startTime = currentTime,
+                    alpha = 0f,
+                    isVisible = true,
+                    lastUpdateTime = currentTime
+                )
+            }
+        }
+        
+        // 标记不再检测到的卡片为不可见（开始淡出）
+        for ((id, card) in animatedCards) {
+            if (!newShapeIds.contains(id) && card.isVisible) {
+                animatedCards[id] = card.copy(isVisible = false, lastUpdateTime = currentTime)
+            }
+        }
+        
         invalidate()
     }
     
@@ -231,14 +278,55 @@ class BeakerCanvasView @JvmOverloads constructor(
             canvas.drawText(label, c.x - tw / 2f, c.y + labelPaint.textSize / 3f, labelPaint)
         }
         
-        // Draw detected shapes as chemical cards
-        for (shape in detectedShapes) {
-            // 转换相机坐标为视图坐标
+        // Draw animated chemical cards
+        val currentTime = System.currentTimeMillis()
+        val cardsToRemove = mutableListOf<Int>()
+        
+        for ((id, card) in animatedCards) {
+            val timeSinceStart = currentTime - card.startTime
+            val timeSinceUpdate = currentTime - card.lastUpdateTime
+            
+            // 计算透明度
+            val targetAlpha = if (card.isVisible) {
+                // 淡入动画
+                if (timeSinceStart < fadeInDuration) {
+                    timeSinceStart.toFloat() / fadeInDuration
+                } else {
+                    1f
+                }
+            } else {
+                // 淡出动画
+                if (timeSinceUpdate < fadeOutDuration) {
+                    1f - (timeSinceUpdate.toFloat() / fadeOutDuration)
+                } else {
+                    0f
+                }
+            }
+            
+            // 更新卡片透明度
+            animatedCards[id] = card.copy(alpha = targetAlpha)
+            
+            // 如果卡片已经完全透明，标记为删除
+            if (targetAlpha <= 0f && !card.isVisible) {
+                cardsToRemove.add(id)
+                continue
+            }
+            
+            // 如果卡片超过生命周期且不可见，也标记为删除
+            if (timeSinceStart > cardLifetime && !card.isVisible) {
+                cardsToRemove.add(id)
+                continue
+            }
+            
+            // 绘制卡片
+            val shape = card.element
             val (transformedX, transformedY) = transformCameraCoordinate(shape.x, shape.y)
             
             // 使用ChemicalCard的卡片效果绘制
             val radius = dp(30f) // 卡片半径
             val paint = paintFor(shape.type)
+            val originalAlpha = paint.alpha
+            paint.alpha = (originalAlpha * targetAlpha).toInt().coerceIn(0, 255)
             
             // 绘制化学卡片圆形
             canvas.drawCircle(transformedX, transformedY, radius, paint)
@@ -256,6 +344,8 @@ class BeakerCanvasView @JvmOverloads constructor(
                 ChemicalType.C -> "C"
             }
             val tw = labelPaint.measureText(label)
+            val originalLabelAlpha = labelPaint.alpha
+            labelPaint.alpha = (originalLabelAlpha * targetAlpha).toInt().coerceIn(0, 255)
             canvas.drawText(label, transformedX - tw / 2f, transformedY + labelPaint.textSize / 3f, labelPaint)
             
             // 绘制坐标信息 - 显示百分比坐标
@@ -268,9 +358,35 @@ class BeakerCanvasView @JvmOverloads constructor(
             val coordY = transformedY + radius + coordHeight + 8f
             
             // 绘制坐标信息背景
+            val originalCoordBgAlpha = coordinateTextBgPaint.alpha
+            coordinateTextBgPaint.alpha = (originalCoordBgAlpha * targetAlpha).toInt().coerceIn(0, 255)
             canvas.drawRoundRect(coordX - 4f, coordY - coordHeight, coordX + coordWidth + 4f, coordY + 4f, dp(4f), dp(4f), coordinateTextBgPaint)
+            
             // 绘制坐标信息文本
+            val originalCoordTextAlpha = coordinateTextPaint.alpha
+            coordinateTextPaint.alpha = (originalCoordTextAlpha * targetAlpha).toInt().coerceIn(0, 255)
             canvas.drawText(coordText, coordX, coordY, coordinateTextPaint)
+            
+            // 恢复画笔透明度
+            paint.alpha = originalAlpha
+            labelPaint.alpha = originalLabelAlpha
+            coordinateTextBgPaint.alpha = originalCoordBgAlpha
+            coordinateTextPaint.alpha = originalCoordTextAlpha
+        }
+        
+        // 移除已经完全消失的卡片
+        for (id in cardsToRemove) {
+            animatedCards.remove(id)
+        }
+        
+        // 如果有动画正在进行，继续刷新
+        if (animatedCards.any { (_, card) -> 
+            val timeSinceStart = currentTime - card.startTime
+            val timeSinceUpdate = currentTime - card.lastUpdateTime
+            (card.isVisible && timeSinceStart < fadeInDuration) || 
+            (!card.isVisible && timeSinceUpdate < fadeOutDuration)
+        }) {
+            postInvalidateOnAnimation()
         }
 
         // Proximity detection and equation display
@@ -533,29 +649,159 @@ class BeakerCanvasView @JvmOverloads constructor(
     }
 
     private fun drawGasEffect(canvas: Canvas, cx: Float, cy: Float, t: Float) {
-        val bubbles = 8
-        val rise = dp(60f) * t
-        for (i in 0 until bubbles) {
-            val angle = (i / bubbles.toFloat()) * (2f * Math.PI.toFloat())
-            val bx = cx + dp(12f) * kotlin.math.cos(angle)
-            val by = cy - rise - i * dp(3f)
-            val r = dp(6f) * (0.6f + 0.4f * ((i + 1) / bubbles.toFloat()))
-            bubblePaint.alpha = (180 * (1f - t)).toInt().coerceIn(0, 255)
-            canvas.drawCircle(bx, by, r, bubblePaint)
+        // 增加更多气泡，分为多个层次
+        val bubbleLayers = 3
+        val bubblesPerLayer = 12
+        
+        for (layer in 0 until bubbleLayers) {
+            val layerDelay = layer * 0.2f
+            val layerT = (t - layerDelay).coerceIn(0f, 1f)
+            if (layerT <= 0f) continue
+            
+            val layerIntensity = 1f - layer * 0.3f
+            val rise = dp(80f) * layerT * layerIntensity
+            
+            for (i in 0 until bubblesPerLayer) {
+                // 更随机的气泡分布
+                val angle = (i / bubblesPerLayer.toFloat()) * (2f * Math.PI.toFloat()) + layer * 0.5f
+                val radiusVariation = dp(20f + layer * 10f) * (0.5f + 0.5f * kotlin.math.sin(layerT * 3f + i * 0.3f))
+                val bx = cx + radiusVariation * kotlin.math.cos(angle)
+                val by = cy - rise - i * dp(2f) + dp(5f) * kotlin.math.sin(layerT * 4f + i * 0.2f)
+                
+                // 不同大小的气泡
+                val baseRadius = dp(4f + layer * 2f)
+                val sizeVariation = 0.5f + 0.5f * kotlin.math.sin(layerT * 5f + i * 0.4f)
+                val r = baseRadius * sizeVariation * layerIntensity
+                
+                // 气泡透明度和颜色变化
+                val alpha = (200 * layerIntensity * (1f - layerT) * sizeVariation).toInt().coerceIn(0, 255)
+                
+                // 创建不同颜色的气泡
+                val bubbleColor = when (layer) {
+                    0 -> Color.parseColor("#99FFFFFF") // 白色气泡
+                    1 -> Color.parseColor("#99E3F2FD") // 淡蓝色气泡
+                    else -> Color.parseColor("#99F0F8FF") // 淡青色气泡
+                }
+                
+                val layerBubblePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = bubbleColor
+                    style = Paint.Style.FILL
+                    this.alpha = alpha
+                }
+                
+                canvas.drawCircle(bx, by, r, layerBubblePaint)
+                
+                // 添加气泡内部高光效果
+                if (r > dp(3f)) {
+                    val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.parseColor("#CCFFFFFF")
+                        style = Paint.Style.FILL
+                        this.alpha = (alpha * 0.6f).toInt()
+                    }
+                    canvas.drawCircle(bx - r * 0.3f, by - r * 0.3f, r * 0.3f, highlightPaint)
+                }
+            }
+            
+            // 添加气体流动效果
+            if (layerT > 0.3f) {
+                drawGasStream(canvas, cx, cy, layerT, layer, layerIntensity)
+            }
         }
+    }
+    
+    private fun drawGasStream(canvas: Canvas, cx: Float, cy: Float, t: Float, layer: Int, intensity: Float) {
+        val streamPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#66E0F7FA")
+            style = Paint.Style.STROKE
+            strokeWidth = dp(2f + layer)
+            pathEffect = android.graphics.DashPathEffect(floatArrayOf(dp(5f), dp(3f)), t * dp(10f))
+        }
+        
+        val streamHeight = dp(60f) * t * intensity
+        val waveAmplitude = dp(8f)
+        val waveFrequency = 4f
+        
+        val path = android.graphics.Path()
+        path.moveTo(cx, cy)
+        
+        val steps = 20
+        for (i in 0..steps) {
+            val stepT = i / steps.toFloat()
+            val y = cy - streamHeight * stepT
+            val waveOffset = waveAmplitude * kotlin.math.sin(stepT * waveFrequency * Math.PI + layer * 0.5).toFloat()
+            val x = cx + waveOffset
+            
+            if (i == 0) {
+                path.moveTo(x, y)
+            } else {
+                path.lineTo(x, y)
+            }
+        }
+        
+        streamPaint.alpha = (150 * intensity * (1f - t)).toInt().coerceIn(0, 255)
+        canvas.drawPath(path, streamPaint)
     }
 
     private fun drawFireEffect(canvas: Canvas, cx: Float, cy: Float, t: Float) {
-        val layers = flamePaints.size
-        for (i in 0 until layers) {
-            val p = flamePaints[i]
-            val scale = 1f - i * 0.2f
-            val jitter = dp(6f) * kotlin.math.sin((t + i * 0.15f) * 6f).toFloat()
-            p.alpha = (200 * (1f - t)).toInt().coerceIn(0, 255)
-            val rx = cx + jitter
-            val ry = cy - dp(10f) * i
-            val r = dp(24f) * scale
-            canvas.drawCircle(rx, ry, r, p)
+        // 三个连续的放热动画波
+        val waveCount = 3
+        val waveInterval = 0.3f // 每个波之间的间隔
+        
+        for (wave in 0 until waveCount) {
+            val waveT = (t - wave * waveInterval).coerceIn(0f, 1f)
+            if (waveT <= 0f) continue
+            
+            // 每个波的强度随时间衰减
+            val waveIntensity = (1f - waveT) * (1f - wave * 0.2f)
+            if (waveIntensity <= 0f) continue
+            
+            // 更大更丰富的火焰层
+            val layers = flamePaints.size + 2 // 增加更多层
+            for (i in 0 until layers) {
+                val p = if (i < flamePaints.size) flamePaints[i] else flamePaints[flamePaints.size - 1]
+                
+                // 更大的缩放和更复杂的抖动
+                val baseScale = 1.5f + waveT * 0.8f // 增大基础尺寸
+                val scale = baseScale * (1f - i * 0.15f) * waveIntensity
+                
+                // 多方向抖动，创造更自然的火焰效果
+                val jitterX = dp(12f) * kotlin.math.sin((waveT + i * 0.1f + wave * 0.5f) * 8f).toFloat()
+                val jitterY = dp(8f) * kotlin.math.cos((waveT + i * 0.2f + wave * 0.3f) * 6f).toFloat()
+                
+                // 透明度随波次和层次变化
+                val alpha = (255 * waveIntensity * (1f - i * 0.1f)).toInt().coerceIn(0, 255)
+                p.alpha = alpha
+                
+                val rx = cx + jitterX
+                val ry = cy - dp(15f) * i + jitterY - wave * dp(8f)
+                val r = dp(36f) * scale // 增大火焰半径
+                
+                canvas.drawCircle(rx, ry, r, p)
+                
+                // 添加额外的火花效果
+                if (i == 0 && waveT > 0.2f) {
+                    drawFireSparks(canvas, cx, cy, waveT, wave, waveIntensity)
+                }
+            }
+        }
+    }
+    
+    private fun drawFireSparks(canvas: Canvas, cx: Float, cy: Float, t: Float, wave: Int, intensity: Float) {
+        val sparkCount = 8
+        val sparkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#FFD54F")
+            style = Paint.Style.FILL
+        }
+        
+        for (i in 0 until sparkCount) {
+            val angle = (i / sparkCount.toFloat()) * (2f * Math.PI.toFloat()) + wave * 0.5f
+            val distance = dp(50f) * t * intensity
+            val sparkX = cx + distance * kotlin.math.cos(angle)
+            val sparkY = cy + distance * kotlin.math.sin(angle) - dp(20f) * t
+            val sparkRadius = dp(3f) * intensity * (1f - t)
+            
+            sparkPaint.alpha = (200 * intensity * (1f - t)).toInt().coerceIn(0, 255)
+            canvas.drawCircle(sparkX, sparkY, sparkRadius, sparkPaint)
         }
     }
 }
