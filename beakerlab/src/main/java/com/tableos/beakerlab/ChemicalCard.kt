@@ -8,7 +8,8 @@ enum class ChemicalType {
     Cl2,
     O2,
     H2,
-    CO2
+    CO2,
+    C
 }
 
 data class ChemicalCard(

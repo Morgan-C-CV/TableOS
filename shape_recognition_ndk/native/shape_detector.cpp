@@ -19,12 +19,12 @@ cv::Mat loadImage(const std::string& path) {
 std::map<std::string, ColorRange> getDefaultColorRanges() {
     std::map<std::string, ColorRange> colorRanges;
     
-    // 定义各种颜色的HSV范围
-    colorRanges["Blue"] = ColorRange(cv::Scalar(100, 50, 50), cv::Scalar(130, 255, 255));
-    colorRanges["Black"] = ColorRange(cv::Scalar(0, 0, 0), cv::Scalar(180, 255, 50));  // 低明度
-    colorRanges["Cyan"] = ColorRange(cv::Scalar(80, 50, 50), cv::Scalar(100, 255, 255));
-    colorRanges["Yellow"] = ColorRange(cv::Scalar(18, 40, 40), cv::Scalar(36, 255, 255));
-    colorRanges["Green"] = ColorRange(cv::Scalar(40, 50, 50), cv::Scalar(80, 255, 255));
+    // 定义各种颜色的HSV范围 - 更严格的阈值以减少误检测
+    colorRanges["Blue"] = ColorRange(cv::Scalar(105, 80, 80), cv::Scalar(125, 255, 255));     // 更窄的蓝色范围，提高饱和度和明度下限
+    colorRanges["Black"] = ColorRange(cv::Scalar(0, 0, 0), cv::Scalar(180, 80, 40));          // 更严格的黑色检测，降低明度上限
+    colorRanges["Cyan"] = ColorRange(cv::Scalar(85, 80, 80), cv::Scalar(95, 255, 255));       // 更窄的青色范围，提高饱和度和明度下限
+    colorRanges["Yellow"] = ColorRange(cv::Scalar(20, 80, 80), cv::Scalar(34, 255, 255));     // 更严格的黄色范围，提高饱和度和明度下限
+    colorRanges["Green"] = ColorRange(cv::Scalar(45, 80, 80), cv::Scalar(75, 255, 255));      // 更窄的绿色范围，提高饱和度和明度下限
     
     return colorRanges;
 }
@@ -42,12 +42,47 @@ cv::Mat detectColorRegions(const cv::Mat& hsv, const ColorRange& colorRange) {
     cv::Mat mask;
     cv::inRange(hsv, colorRange.lower, colorRange.upper, mask);
     
-    // 形态学操作去除噪声
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
-    cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
-    cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, kernel);
+    // 分离HSV通道进行更精细的控制
+    std::vector<cv::Mat> hsvChannels;
+    cv::split(hsv, hsvChannels);
+    cv::Mat hChannel = hsvChannels[0];  // 色调
+    cv::Mat sChannel = hsvChannels[1];  // 饱和度
+    cv::Mat vChannel = hsvChannels[2];  // 亮度
     
-    return mask;
+    // 创建饱和度mask - 过滤掉饱和度过低的区域（灰色、白色区域）
+    cv::Mat saturationMask;
+    cv::threshold(sChannel, saturationMask, 30, 255, cv::THRESH_BINARY);  // 饱和度阈值
+    
+    // 创建亮度mask - 过滤掉过暗和过亮的区域
+    cv::Mat brightnessMask;
+    cv::Mat darkMask, brightMask;
+    cv::threshold(vChannel, darkMask, 40, 255, cv::THRESH_BINARY);      // 过滤过暗区域
+    cv::threshold(vChannel, brightMask, 240, 255, cv::THRESH_BINARY_INV); // 过滤过亮区域
+    cv::bitwise_and(darkMask, brightMask, brightnessMask);
+    
+    // 组合所有mask
+    cv::Mat combinedMask;
+    cv::bitwise_and(mask, saturationMask, combinedMask);
+    cv::bitwise_and(combinedMask, brightnessMask, combinedMask);
+    
+    // 更严格的形态学操作去除噪声
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(7, 7));
+    cv::morphologyEx(combinedMask, combinedMask, cv::MORPH_OPEN, kernel);
+    cv::morphologyEx(combinedMask, combinedMask, cv::MORPH_CLOSE, kernel);
+    
+    // 额外的噪声过滤 - 去除小的连通区域
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(combinedMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    
+    cv::Mat filteredMask = cv::Mat::zeros(combinedMask.size(), CV_8UC1);
+    for (const auto& contour : contours) {
+        double area = cv::contourArea(contour);
+        if (area > 200) {  // 只保留面积大于200的区域
+            cv::fillPoly(filteredMask, std::vector<std::vector<cv::Point>>{contour}, cv::Scalar(255));
+        }
+    }
+    
+    return filteredMask;
 }
 
 bool isLongRectangle(const std::vector<cv::Point>& contour, double& aspectRatio) {
@@ -69,21 +104,62 @@ bool isLongRectangle(const std::vector<cv::Point>& contour, double& aspectRatio)
 }
 
 bool isTriangle(const std::vector<cv::Point>& contour) {
-    // 使用多边形逼近
+    // 使用更严格的多边形逼近
     std::vector<cv::Point> approx;
-    double epsilon = 0.02 * cv::arcLength(contour, true);
+    double epsilon = 0.015 * cv::arcLength(contour, true);
     cv::approxPolyDP(contour, approx, epsilon, true);
     
-    return (approx.size() == 3);
+    if (approx.size() != 3) {
+        return false;
+    }
+    
+    // 检查轮廓面积与凸包面积的比例，确保形状规整
+    double contourArea = cv::contourArea(contour);
+    std::vector<cv::Point> hull;
+    cv::convexHull(contour, hull);
+    double hullArea = cv::contourArea(hull);
+    
+    if (hullArea > 0 && (contourArea / hullArea) < 0.85) {  // 面积比例阈值
+        return false;
+    }
+    
+    // 检查三角形的边长比例，避免过于细长的形状
+    std::vector<double> sideLengths;
+    for (int i = 0; i < 3; i++) {
+        cv::Point p1 = approx[i];
+        cv::Point p2 = approx[(i + 1) % 3];
+        double length = sqrt((p2.x - p1.x) * (p2.x - p1.x) + (p2.y - p1.y) * (p2.y - p1.y));
+        sideLengths.push_back(length);
+    }
+    
+    // 检查最长边与最短边的比例
+    double maxSide = *std::max_element(sideLengths.begin(), sideLengths.end());
+    double minSide = *std::min_element(sideLengths.begin(), sideLengths.end());
+    
+    if (maxSide / minSide > 5.0) {  // 避免过于细长的三角形
+        return false;
+    }
+    
+    return true;
 }
 
 bool isRectangle(const std::vector<cv::Point>& contour, double& aspectRatio) {
 
     std::vector<cv::Point> approx;
-    double epsilon = 0.02 * cv::arcLength(contour, true);
+    double epsilon = 0.015 * cv::arcLength(contour, true);  // 更严格的多边形逼近
     cv::approxPolyDP(contour, approx, epsilon, true);
     
     if (approx.size() != 4) {
+        return false;
+    }
+    
+    // 检查轮廓面积与凸包面积的比例，确保形状规整
+    double contourArea = cv::contourArea(contour);
+    std::vector<cv::Point> hull;
+    cv::convexHull(contour, hull);
+    double hullArea = cv::contourArea(hull);
+    
+    if (hullArea > 0 && (contourArea / hullArea) < 0.85) {  // 面积比例阈值
         return false;
     }
     
@@ -107,9 +183,9 @@ bool isRectangle(const std::vector<cv::Point>& contour, double& aspectRatio) {
         }
     }
     
-    // 检查角度是否接近90度
+    // 检查角度是否接近90度 - 更严格的角度要求
     for (double angle : angles) {
-        if (abs(angle - 90.0) > 20.0) {  // 允许20度误差
+        if (abs(angle - 90.0) > 15.0) {  // 减少到15度误差
             return false;
         }
     }
@@ -119,6 +195,23 @@ bool isRectangle(const std::vector<cv::Point>& contour, double& aspectRatio) {
     aspectRatio = (double)boundingRect.width / boundingRect.height;
     if (aspectRatio < 1.0) {
         aspectRatio = 1.0 / aspectRatio;
+    }
+    
+    // 检查边长比例的一致性
+    std::vector<double> sideLengths;
+    for (int i = 0; i < 4; i++) {
+        cv::Point p1 = approx[i];
+        cv::Point p2 = approx[(i + 1) % 4];
+        double length = sqrt((p2.x - p1.x) * (p2.x - p1.x) + (p2.y - p1.y) * (p2.y - p1.y));
+        sideLengths.push_back(length);
+    }
+    
+    // 检查对边长度是否相近（矩形特性）
+    double ratio1 = sideLengths[0] / sideLengths[2];  // 对边1
+    double ratio2 = sideLengths[1] / sideLengths[3];  // 对边2
+    
+    if (abs(ratio1 - 1.0) > 0.3 || abs(ratio2 - 1.0) > 0.3) {  // 对边长度差异不超过30%
+        return false;
     }
     
     return true;
@@ -213,6 +306,54 @@ void calculateTriangleOrientation(const std::vector<cv::Point>& contour, Detecte
     shape.orientationAngle = angle;
 }
 
+double calculateShapeConfidence(const std::vector<cv::Point>& contour, ShapeType shapeType) {
+    double confidence = 0.0;
+    
+    // 基础置信度：轮廓面积与凸包面积的比例
+    double contourArea = cv::contourArea(contour);
+    std::vector<cv::Point> hull;
+    cv::convexHull(contour, hull);
+    double hullArea = cv::contourArea(hull);
+    
+    double areaRatio = (hullArea > 0) ? (contourArea / hullArea) : 0.0;
+    confidence += areaRatio * 0.4;  // 40%权重
+    
+    // 轮廓周长与边界矩形周长的比例
+    double perimeter = cv::arcLength(contour, true);
+    cv::Rect boundingRect = cv::boundingRect(contour);
+    double rectPerimeter = 2.0 * (boundingRect.width + boundingRect.height);
+    double perimeterRatio = (rectPerimeter > 0) ? (perimeter / rectPerimeter) : 0.0;
+    
+    // 根据形状类型调整周长比例的期望值
+    double expectedPerimeterRatio = 1.0;
+    if (shapeType == ShapeType::TRIANGLE) {
+        expectedPerimeterRatio = 0.8;  // 三角形周长通常小于矩形
+    } else if (shapeType == ShapeType::RECTANGLE || shapeType == ShapeType::LONG_RECTANGLE) {
+        expectedPerimeterRatio = 1.0;  // 矩形周长接近边界矩形
+    }
+    
+    double perimeterScore = 1.0 - abs(perimeterRatio - expectedPerimeterRatio);
+    confidence += std::max(0.0, perimeterScore) * 0.3;  // 30%权重
+    
+    // 形状规整度：多边形逼近的顶点数量
+    std::vector<cv::Point> approx;
+    double epsilon = 0.015 * cv::arcLength(contour, true);
+    cv::approxPolyDP(contour, approx, epsilon, true);
+    
+    double shapeScore = 0.0;
+    if (shapeType == ShapeType::TRIANGLE && approx.size() == 3) {
+        shapeScore = 1.0;
+    } else if ((shapeType == ShapeType::RECTANGLE || shapeType == ShapeType::LONG_RECTANGLE) && approx.size() == 4) {
+        shapeScore = 1.0;
+    } else {
+        shapeScore = 0.5;  // 部分匹配
+    }
+    
+    confidence += shapeScore * 0.3;  // 30%权重
+    
+    return std::min(1.0, confidence);
+}
+
 ShapeType analyzeContourShape(const std::vector<cv::Point>& contour) {
     double aspectRatio;
     
@@ -273,8 +414,8 @@ DetectionResult detectShapes(const cv::Mat& image, bool debug) {
         for (const auto& contour : contours) {
             double area = cv::contourArea(contour);
             
-            // 过滤太小的轮廓
-            if (area < 500) {
+            // 过滤太小的轮廓 - 提高阈值以减少误检测
+            if (area < 800) {  // 面积过滤阈值
                 continue;
             }
             
@@ -297,6 +438,14 @@ DetectionResult detectShapes(const cv::Mat& image, bool debug) {
             shape.aspectRatio = (double)shape.boundingRect.width / shape.boundingRect.height;
             if (shape.aspectRatio < 1.0) {
                 shape.aspectRatio = 1.0 / shape.aspectRatio;
+            }
+            
+            // 计算置信度分数
+            double confidence = calculateShapeConfidence(contour, shape.type);
+            
+            // 过滤低置信度的检测结果
+            if (confidence < 0.4) {  // 置信度阈值
+                continue;
             }
             
             // 计算方向角和方向线

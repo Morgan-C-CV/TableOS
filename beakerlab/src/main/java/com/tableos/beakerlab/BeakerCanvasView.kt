@@ -31,6 +31,7 @@ class BeakerCanvasView @JvmOverloads constructor(
             ChemicalType.O2 -> Color.parseColor("#3F51B5") // Indigo
             ChemicalType.H2 -> Color.parseColor("#00BCD4") // Cyan
             ChemicalType.CO2 -> Color.parseColor("#9E9E9E") // Gray
+            ChemicalType.C -> Color.parseColor("#424242") // Dark gray (carbon)
         }
         return p
     }
@@ -74,6 +75,38 @@ class BeakerCanvasView @JvmOverloads constructor(
         color = Color.parseColor("#66FFFF66")
         style = Paint.Style.FILL
     }
+    
+    // 形状边框标注相关
+    private val detectedShapes = mutableListOf<DetectedElement>()
+    private val shapeBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = dp(4f)
+        color = Color.parseColor("#00FF00") // 绿色边框
+    }
+    private val shapeInnerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = dp(2f)
+        color = Color.parseColor("#FFFFFF") // 白色内边框
+    }
+    private val shapeTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = dp(14f)
+        style = Paint.Style.FILL
+        isFakeBoldText = true
+    }
+    private val shapeTextBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#DD000000")
+        style = Paint.Style.FILL
+    }
+    private val coordinateTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#FFFF00") // 黄色坐标文字
+        textSize = dp(10f)
+        style = Paint.Style.FILL
+    }
+    private val coordinateTextBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#AA000000")
+        style = Paint.Style.FILL
+    }
 
     fun addCard(type: ChemicalType) {
         val r = dp(28f)
@@ -82,6 +115,17 @@ class BeakerCanvasView @JvmOverloads constructor(
         val jitterX = if (type == ChemicalType.Na) -dp(40f) else dp(40f)
         val card = ChemicalCard(nextId++, type, cx + jitterX, cy, r)
         cards.add(card)
+        invalidate()
+    }
+    
+    fun updateDetectedShapes(shapes: List<DetectedElement>) {
+        detectedShapes.clear()
+        detectedShapes.addAll(shapes)
+        invalidate()
+    }
+    
+    fun clearDetectedShapes() {
+        detectedShapes.clear()
         invalidate()
     }
 
@@ -101,9 +145,58 @@ class BeakerCanvasView @JvmOverloads constructor(
                 ChemicalType.O2 -> "O₂"
                 ChemicalType.H2 -> "H₂"
                 ChemicalType.CO2 -> "CO₂"
+                ChemicalType.C -> "C"
             }
             val tw = labelPaint.measureText(label)
             canvas.drawText(label, c.x - tw / 2f, c.y + labelPaint.textSize / 3f, labelPaint)
+        }
+        
+        // Draw detected shape borders
+        for (shape in detectedShapes) {
+            // 绘制双重圆形边框（检测到的形状）
+            val radius = dp(40f) // 固定半径
+            canvas.drawCircle(shape.x, shape.y, radius, shapeBorderPaint) // 外边框（绿色）
+            canvas.drawCircle(shape.x, shape.y, radius - dp(2f), shapeInnerPaint) // 内边框（白色）
+            
+            // 绘制元素标签
+            val label = when (shape.type) {
+                ChemicalType.Na -> "Na"
+                ChemicalType.H2O -> "H₂O"
+                ChemicalType.HCl -> "HCl"
+                ChemicalType.NaOH -> "NaOH"
+                ChemicalType.Cl2 -> "Cl₂"
+                ChemicalType.O2 -> "O₂"
+                ChemicalType.H2 -> "H₂"
+                ChemicalType.CO2 -> "CO₂"
+                ChemicalType.C -> "C"
+            }
+            
+            val textWidth = shapeTextPaint.measureText(label)
+            val textHeight = shapeTextPaint.textSize
+            val textX = shape.x - textWidth / 2f
+            val textY = shape.y - radius - 15f
+            
+            // 绘制元素标签背景
+            canvas.drawRoundRect(textX - 4f, textY - textHeight, textX + textWidth + 4f, textY + 4f, dp(4f), dp(4f), shapeTextBgPaint)
+            // 绘制元素标签文本
+            canvas.drawText(label, textX, textY, shapeTextPaint)
+            
+            // 绘制坐标信息
+            val coordText = "(${shape.x.toInt()}, ${shape.y.toInt()})"
+            val coordWidth = coordinateTextPaint.measureText(coordText)
+            val coordHeight = coordinateTextPaint.textSize
+            val coordX = shape.x - coordWidth / 2f
+            val coordY = shape.y + radius + coordHeight + 8f
+            
+            // 绘制坐标背景
+            canvas.drawRoundRect(coordX - 3f, coordY - coordHeight, coordX + coordWidth + 3f, coordY + 3f, dp(3f), dp(3f), coordinateTextBgPaint)
+            // 绘制坐标文本
+            canvas.drawText(coordText, coordX, coordY, coordinateTextPaint)
+            
+            // 绘制十字准星
+            val crossSize = dp(8f)
+            canvas.drawLine(shape.x - crossSize, shape.y, shape.x + crossSize, shape.y, shapeBorderPaint)
+            canvas.drawLine(shape.x, shape.y - crossSize, shape.x, shape.y + crossSize, shapeBorderPaint)
         }
 
         // Proximity detection and equation display
@@ -216,25 +309,17 @@ class BeakerCanvasView @JvmOverloads constructor(
                 "2Na + 2H₂O → 2NaOH + H₂↑",
                 listOf(EffectType.GAS, EffectType.GLOW)
             )
-            setOf(ChemicalType.HCl, ChemicalType.NaOH) -> ReactionInfo(
-                "HCl + NaOH → NaCl + H₂O",
-                listOf(EffectType.GLOW)
-            )
-            setOf(ChemicalType.Na, ChemicalType.Cl2) -> ReactionInfo(
-                "2Na + Cl₂ → 2NaCl",
-                listOf(EffectType.GLOW)
-            )
             setOf(ChemicalType.H2, ChemicalType.O2) -> ReactionInfo(
                 "2H₂ + O₂ → 2H₂O",
                 listOf(EffectType.FIRE, EffectType.GAS)
             )
-            setOf(ChemicalType.H2, ChemicalType.Cl2) -> ReactionInfo(
-                "H₂ + Cl₂ → 2HCl",
-                listOf(EffectType.GLOW)
+            setOf(ChemicalType.Na, ChemicalType.O2) -> ReactionInfo(
+                "4Na + O₂ → 2Na₂O",
+                listOf(EffectType.FIRE, EffectType.GLOW)
             )
-            setOf(ChemicalType.CO2, ChemicalType.H2O) -> ReactionInfo(
-                "CO₂ + H₂O ⇌ H₂CO₃",
-                emptyList()
+            setOf(ChemicalType.C, ChemicalType.O2) -> ReactionInfo(
+                "C + O₂ → CO₂",
+                listOf(EffectType.FIRE, EffectType.GAS)
             )
             else -> null
         }

@@ -19,6 +19,13 @@
             android:focusableInTouchMode="true"
             android:clickable="true" />
 
+        <!-- 相机预览 -->
+        <TextureView
+            android:id="@+id/camera_texture_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:alpha="0.7" />
+
         <com.tableos.beakerlab.BeakerCanvasView
             android:id="@+id/canvas"
             android:layout_width="match_parent"
@@ -39,6 +46,27 @@
             android:text="测试形状检测"
             android:layout_gravity="bottom|start"
             android:layout_margin="16dp" />
+
+        <!-- 反应状态显示 -->
+        <TextView
+            android:id="@+id/reaction_status_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_margin="16dp"
+            android:background="@drawable/reaction_status_background"
+            android:padding="16dp"
+            android:text="🔬 等待化学反应..."
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:minWidth="200dp"
+            android:elevation="8dp"
+            android:shadowColor="#000000"
+            android:shadowDx="2"
+            android:shadowDy="2"
+            android:shadowRadius="4" />
 
         <!-- 用于显示检测结果的 ImageView -->
         <ImageView
