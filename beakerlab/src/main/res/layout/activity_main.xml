@@ -24,7 +24,7 @@
             android:id="@+id/camera_texture_view"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:alpha="0.7" />
+            android:alpha="0.0" />
 
         <com.tableos.beakerlab.BeakerCanvasView
             android:id="@+id/canvas"
