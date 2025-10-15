@@ -22,22 +22,13 @@ class BeakerCanvasView @JvmOverloads constructor(
 
     private fun paintFor(type: ChemicalType): Paint {
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        p.style = Paint.Style.FILL
-        p.color = when (type) {
-            ChemicalType.Na -> Color.parseColor("#FFB300") // Amber
-            ChemicalType.H2O -> Color.parseColor("#2196F3") // Blue
-            ChemicalType.HCl -> Color.parseColor("#E53935") // Red
-            ChemicalType.NaOH -> Color.parseColor("#8BC34A") // Green
-            ChemicalType.Cl2 -> Color.parseColor("#43A047") // Dark green
-            ChemicalType.O2 -> Color.parseColor("#3F51B5") // Indigo
-            ChemicalType.H2 -> Color.parseColor("#00BCD4") // Cyan
-            ChemicalType.CO2 -> Color.parseColor("#9E9E9E") // Gray
-            ChemicalType.C -> Color.parseColor("#424242") // Dark gray (carbon)
-        }
+        p.style = Paint.Style.STROKE // 改为描边样式
+        p.strokeWidth = dp(3f) // 设置描边宽度
+        p.color = Color.BLACK // 统一使用黑色
         return p
     }
     private val labelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = Color.BLACK // 改为黑色字体
         textSize = dp(14f)
     }
     private val eqPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
