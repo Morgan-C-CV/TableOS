@@ -19,12 +19,25 @@ cv::Mat loadImage(const std::string& path) {
 std::map<std::string, ColorRange> getDefaultColorRanges() {
     std::map<std::string, ColorRange> colorRanges;
     
-    // 定义各种颜色的HSV范围 - 更严格的阈值以减少误检测
-    colorRanges["Blue"] = ColorRange(cv::Scalar(105, 80, 80), cv::Scalar(125, 255, 255));     // 更窄的蓝色范围，提高饱和度和明度下限
-    colorRanges["Black"] = ColorRange(cv::Scalar(0, 0, 0), cv::Scalar(180, 80, 40));          // 更严格的黑色检测，降低明度上限
-    colorRanges["Cyan"] = ColorRange(cv::Scalar(85, 80, 80), cv::Scalar(95, 255, 255));       // 更窄的青色范围，提高饱和度和明度下限
-    colorRanges["Yellow"] = ColorRange(cv::Scalar(20, 80, 80), cv::Scalar(34, 255, 255));     // 更严格的黄色范围，提高饱和度和明度下限
-    colorRanges["Green"] = ColorRange(cv::Scalar(45, 80, 80), cv::Scalar(75, 255, 255));      // 更窄的绿色范围，提高饱和度和明度下限
+    // 放宽颜色识别范围 - 基于用户提供的RGB颜色值，使用更宽松的HSV容差
+    // 黄色 C2DF5F (RGB: 194, 223, 95) -> HSV: (74, 147, 223) 
+    // 色调范围扩大到±15度，饱和度和亮度范围也相应放宽
+    colorRanges["Yellow"] = ColorRange(cv::Scalar(59, 80, 150), cv::Scalar(89, 255, 255));
+    
+    // 绿色 44AF55 (RGB: 68, 175, 85) -> HSV: (129, 153, 175)
+    // 绿色范围覆盖更广的绿色色调
+    colorRanges["Green"] = ColorRange(cv::Scalar(114, 80, 120), cv::Scalar(144, 255, 255));
+    
+    // 青色 54B8E6 (RGB: 84, 184, 230) -> HSV: (199, 159, 230)
+    // 青色范围包含更多的蓝绿色调
+    colorRanges["Cyan"] = ColorRange(cv::Scalar(184, 80, 150), cv::Scalar(214, 255, 255));
+    
+    // 蓝色 6656B8 (RGB: 102, 86, 184) -> HSV: (250, 133, 184)
+    // 蓝色范围覆盖紫蓝到纯蓝的范围，处理色调环绕
+    colorRanges["Blue"] = ColorRange(cv::Scalar(235, 60, 120), cv::Scalar(265, 255, 255));
+    
+    // 缩小黑色检测范围，减少误识别阴影和暗色区域
+    colorRanges["Black"] = ColorRange(cv::Scalar(0, 0, 0), cv::Scalar(180, 50, 30));
     
     return colorRanges;
 }
@@ -52,15 +65,15 @@ cv::Mat detectColorRegions(const cv::Mat& hsv, const ColorRange& colorRange) {
     cv::Mat sChannel = hsvChannels[1];  // 饱和度
     cv::Mat vChannel = hsvChannels[2];  // 亮度
     
-    // 创建饱和度mask - 过滤掉饱和度过低的区域（灰色、白色区域）
+    // 创建饱和度mask - 放宽饱和度要求，允许更多颜色通过
     cv::Mat saturationMask;
-    cv::threshold(sChannel, saturationMask, 30, 255, cv::THRESH_BINARY);  // 饱和度阈值
+    cv::threshold(sChannel, saturationMask, 30, 255, cv::THRESH_BINARY);  // 降低饱和度阈值，允许更淡的颜色
     
-    // 创建亮度mask - 过滤掉过暗和过亮的区域
+    // 创建亮度mask - 放宽亮度范围，适应更多光照条件
     cv::Mat brightnessMask;
     cv::Mat darkMask, brightMask;
-    cv::threshold(vChannel, darkMask, 40, 255, cv::THRESH_BINARY);      // 过滤过暗区域
-    cv::threshold(vChannel, brightMask, 240, 255, cv::THRESH_BINARY_INV); // 过滤过亮区域
+    cv::threshold(vChannel, darkMask, 40, 255, cv::THRESH_BINARY);      // 降低暗区域阈值，允许更暗的颜色
+    cv::threshold(vChannel, brightMask, 240, 255, cv::THRESH_BINARY_INV); // 提高亮区域阈值，允许更亮的颜色
     cv::bitwise_and(darkMask, brightMask, brightnessMask);
     
     // 组合所有mask
@@ -68,19 +81,19 @@ cv::Mat detectColorRegions(const cv::Mat& hsv, const ColorRange& colorRange) {
     cv::bitwise_and(mask, saturationMask, combinedMask);
     cv::bitwise_and(combinedMask, brightnessMask, combinedMask);
     
-    // 更严格的形态学操作去除噪声
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(7, 7));
+    // 更宽松的形态学操作 - 减少噪声过滤以保留更多目标
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));  // 进一步减小核大小
     cv::morphologyEx(combinedMask, combinedMask, cv::MORPH_OPEN, kernel);
     cv::morphologyEx(combinedMask, combinedMask, cv::MORPH_CLOSE, kernel);
     
-    // 额外的噪声过滤 - 去除小的连通区域
+    // 宽松的噪声过滤 - 允许更小的连通区域通过
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(combinedMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
     
     cv::Mat filteredMask = cv::Mat::zeros(combinedMask.size(), CV_8UC1);
     for (const auto& contour : contours) {
         double area = cv::contourArea(contour);
-        if (area > 200) {  // 只保留面积大于200的区域
+        if (area > 100) {  // 进一步降低最小面积阈值，检测更小的目标
             cv::fillPoly(filteredMask, std::vector<std::vector<cv::Point>>{contour}, cv::Scalar(255));
         }
     }

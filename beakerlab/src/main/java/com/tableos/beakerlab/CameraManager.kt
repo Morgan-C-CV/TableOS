@@ -239,17 +239,35 @@ class CameraManager(private val context: Context) {
     }
     
     private fun chooseOptimalSize(choices: Array<Size>?): Size {
-        if (choices == null) return Size(640, 480)
+        if (choices == null) return Size(1280, 720)
         
-        // Prefer 640x480 for better performance
-        for (size in choices) {
-            if (size.width == 640 && size.height == 480) {
-                return size
+        // 优先选择高分辨率以提高识别精度
+        val preferredSizes = listOf(
+            Size(1920, 1080),  // Full HD
+            Size(1600, 1200),  // UXGA
+            Size(1280, 960),   // SXGA
+            Size(1280, 720),   // HD
+            Size(1024, 768),   // XGA
+            Size(800, 600),    // SVGA
+            Size(640, 480)     // VGA (fallback)
+        )
+        
+        // 查找最接近的支持分辨率
+        for (preferred in preferredSizes) {
+            val match = choices.find { 
+                it.width == preferred.width && it.height == preferred.height 
+            }
+            if (match != null) {
+                Log.d(TAG, "Selected camera resolution: ${match.width}x${match.height}")
+                return match
             }
         }
         
-        // Fallback to first available size
-        return choices.firstOrNull() ?: Size(640, 480)
+        // 如果没有找到首选分辨率，选择不超过 1920x1080 的最大尺寸
+        val candidates = choices.filter { it.width <= 1920 && it.height <= 1080 }
+        val largest = candidates.maxByOrNull { it.width * it.height }
+        
+        return largest ?: choices.firstOrNull() ?: Size(1280, 720)
     }
     
     private fun computeTotalRotation(): Int {
