@@ -30,8 +30,8 @@ struct HullInfo {
 static std::vector<std::vector<HullInfo>> frameBuffer(5);
 static int currentFrameIndex = 0;
 static int frameCount = 0;
-static const double DISTANCE_THRESHOLD = 100.0;
-static const int REQUIRED_FRAMES = 2;
+static const double DISTANCE_THRESHOLD = 80.0;
+static const int REQUIRED_FRAMES = 3;
 
 // 颜色定义
 static std::vector<std::string> colorNames = {"Yellow", "Green", "Cyan", "Blue", "Black"};
@@ -164,7 +164,7 @@ Java_com_tableos_beakerlab_ShapeDetectorJNI_detectShapesFromBitmap(JNIEnv *env, 
         for (const auto& contour : contours) {
             double area = cv::contourArea(contour);
             
-            if (area > 500) {  // 过滤小轮廓，与保存图片检测保持一致
+            if (area > 800) {  // 过滤小轮廓，与保存图片检测保持一致
                 std::vector<cv::Point> hull;
                 cv::convexHull(contour, hull);
                 

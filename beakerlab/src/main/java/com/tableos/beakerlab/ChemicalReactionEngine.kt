@@ -30,7 +30,7 @@ class ChemicalReactionEngine {
     private var imageHeight = 1080f
     
     // 反应冷却时间管理
-    private val reactionCooldownMs = 3000L // 3秒冷却时间
+    private val reactionCooldownMs = 2000L // 2秒冷却时间
     private val lastReactionTimes = mutableMapOf<String, Long>()
     private val detectedReactionPairs = mutableSetOf<String>()
     
