@@ -1,8 +1,10 @@
 #include "shape_detector_c_api.h"
+#include "shape_detector.h"
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <string>
 #include <cstring>
+#include <map>
 
 // 从OpenCV Mat创建ImageData
 ImageData matToImageData(const cv::Mat& mat) {
@@ -92,8 +94,49 @@ int main(int argc, char* argv[]) {
     ImageData imageData = matToImageData(image);
     std::cout << "✓ 图像数据转换完成" << std::endl;
     
-    // 4. 执行形状检测
-    std::cout << "\n4. 执行形状检测..." << std::endl;
+    // 4. 显示每个颜色的二值化mask
+    std::cout << "\n4. 显示每个颜色的二值化mask..." << std::endl;
+    
+    // 转换为HSV
+    cv::Mat hsv;
+    cv::cvtColor(image, hsv, cv::COLOR_BGR2HSV);
+    
+    // 获取颜色范围
+    std::map<std::string, ShapeDetector::ColorRange> colorRanges = ShapeDetector::getDefaultColorRanges();
+    
+    // 为每种颜色生成并显示mask
+    for (const auto& colorPair : colorRanges) {
+        const std::string& colorName = colorPair.first;
+        const ShapeDetector::ColorRange& colorRange = colorPair.second;
+        
+        std::cout << "\n  处理颜色: " << colorName << std::endl;
+        std::cout << "    HSV范围: [" << colorRange.lower[0] << "," << colorRange.lower[1] << "," << colorRange.lower[2] 
+                  << "] - [" << colorRange.upper[0] << "," << colorRange.upper[1] << "," << colorRange.upper[2] << "]" << std::endl;
+        
+        // 生成mask
+        cv::Mat mask = ShapeDetector::detectColorRegions(hsv, colorRange);
+        
+        // 统计mask中的白色像素数量
+        int whitePixels = cv::countNonZero(mask);
+        std::cout << "    检测到的像素数量: " << whitePixels << std::endl;
+        
+        // 显示mask
+        std::string windowName = colorName + " Mask";
+        cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
+        cv::imshow(windowName, mask);
+        
+        // 保存mask图像
+        std::string maskFilename = colorName + "_mask.jpg";
+        cv::imwrite(maskFilename, mask);
+        std::cout << "    Mask已保存到: " << maskFilename << std::endl;
+    }
+    
+    std::cout << "\n✓ 所有颜色mask已生成，按任意键继续..." << std::endl;
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+
+    // 5. 执行形状检测
+    std::cout << "\n5. 执行形状检测..." << std::endl;
     DetectionResult* result = shape_detector_detect(&imageData, true);
     
     if (!result) {

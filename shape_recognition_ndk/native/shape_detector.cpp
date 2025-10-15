@@ -19,24 +19,26 @@ cv::Mat loadImage(const std::string& path) {
 std::map<std::string, ColorRange> getDefaultColorRanges() {
     std::map<std::string, ColorRange> colorRanges;
     
-    // 放宽颜色识别范围 - 基于用户提供的RGB颜色值，使用更宽松的HSV容差
-    // 黄色 C2DF5F (RGB: 194, 223, 95) -> HSV: (74, 147, 223) 
-    // 色调范围扩大到±15度，饱和度和亮度范围也相应放宽
-    colorRanges["Yellow"] = ColorRange(cv::Scalar(59, 80, 150), cv::Scalar(89, 255, 255));
+    // 基于实际图像颜色分析重新定义HSV范围
+    // 黄色方块实际HSV: (36.8°, 146.4, 223.0)
     
-    // 绿色 44AF55 (RGB: 68, 175, 85) -> HSV: (129, 153, 175)
-    // 绿色范围覆盖更广的绿色色调
-    colorRanges["Green"] = ColorRange(cv::Scalar(114, 80, 120), cv::Scalar(144, 255, 255));
+    // 黄色 (Na方块) - 扩展范围以包含实际的36.8°色调
+    // 降低饱和度和亮度要求以适应实际颜色
+    colorRanges["Yellow"] = ColorRange(cv::Scalar(25, 80, 150), cv::Scalar(45, 255, 255));
     
-    // 青色 54B8E6 (RGB: 84, 184, 230) -> HSV: (199, 159, 230)
-    // 青色范围包含更多的蓝绿色调
-    colorRanges["Cyan"] = ColorRange(cv::Scalar(184, 80, 150), cv::Scalar(214, 255, 255));
+    // 绿色 (Q方块) - 调整为不与黄色重叠的纯绿色范围
+    // 从45°开始，避免与黄色重叠
+    colorRanges["Green"] = ColorRange(cv::Scalar(45, 100, 100), cv::Scalar(75, 255, 255));
     
-    // 蓝色 6656B8 (RGB: 102, 86, 184) -> HSV: (250, 133, 184)
-    // 蓝色范围覆盖紫蓝到纯蓝的范围，处理色调环绕
-    colorRanges["Blue"] = ColorRange(cv::Scalar(235, 60, 120), cv::Scalar(265, 255, 255));
+    // 青色 (H₂方块) - 青色到浅蓝色范围
+    // 从75°开始，避免与绿色重叠
+    colorRanges["Cyan"] = ColorRange(cv::Scalar(75, 100, 120), cv::Scalar(105, 255, 255));
     
-    // 缩小黑色检测范围，减少误识别阴影和暗色区域
+    // 蓝色 (H₂O方块) - 深蓝到紫蓝色范围
+    // 从105°开始，避免与青色重叠
+    colorRanges["Blue"] = ColorRange(cv::Scalar(105, 100, 100), cv::Scalar(140, 255, 255));
+    
+    // 黑色检测范围保持不变
     colorRanges["Black"] = ColorRange(cv::Scalar(0, 0, 0), cv::Scalar(180, 50, 30));
     
     return colorRanges;
