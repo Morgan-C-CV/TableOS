@@ -338,25 +338,9 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
         val productNames = reaction.products.map { getChemicalDisplayName(it) }
         val reactionText = "${reactantNames.joinToString(" + ")} → ${productNames.joinToString(" + ")}"
         
-        // 添加到历史记录
-        val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-        val historyEntry = "[$timestamp] ${reaction.name}: $reactionText"
-        reactionHistory.add(0, historyEntry) // 添加到开头
-        if (reactionHistory.size > 10) { // 保持最多10条记录
-            reactionHistory.removeAt(reactionHistory.size - 1)
-        }
-        
-        // 更新状态文本，包含最新反应和历史
-        val displayText = buildString {
-            append("🧪 ${reaction.name}\n")
-            append("${reaction.description}\n")
-            append("━━━━━━━━━━━━━━━━━━━━\n")
-            append("📋 反应历史:\n")
-            reactionHistory.take(3).forEach { entry ->
-                append("• $entry\n")
-            }
-        }
-        reactionStatusText.text = displayText.trimEnd()
+        // 简化状态文本显示，只显示当前反应
+        val displayText = "🧪 ${reaction.name}: $reactionText"
+        reactionStatusText.text = displayText
         
         // 添加颜色变化效果
         reactionStatusText.setTextColor(getReactionColor(reaction))
@@ -374,6 +358,15 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
                     .start()
             }
             .start()
+        
+        // 在BeakerCanvasView中触发化学反应特效
+        val beakerCanvasView = findViewById<BeakerCanvasView>(R.id.canvas)
+        if (reactantElements.size >= 2) {
+            // 计算反应位置（两个反应物的中点）
+            val centerX = reactantElements.take(2).map { it.x }.average().toFloat()
+            val centerY = reactantElements.take(2).map { it.y }.average().toFloat()
+            beakerCanvasView.triggerReactionEffect(reaction, centerX, centerY)
+        }
         
         // 显示Toast通知
         val toastMessage = "🔬 ${reaction.name}: $reactionText"

@@ -63,6 +63,16 @@ class BeakerCanvasView @JvmOverloads constructor(
         val durationMs: Long = 2000L
     )
     private var currentEffect: ActiveEffect? = null
+    
+    // 悬浮化学式效果
+    private data class FloatingEquation(
+        val equation: String,
+        val startMs: Long,
+        val x: Float,
+        val y: Float,
+        val durationMs: Long = 3000L
+    )
+    private var currentEquation: FloatingEquation? = null
     private val flamePaints = listOf(
         Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FFD54F") }, // yellow
         Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FB8C00") }, // orange
@@ -226,17 +236,19 @@ class BeakerCanvasView @JvmOverloads constructor(
             canvas.drawText(label, c.x - tw / 2f, c.y + labelPaint.textSize / 3f, labelPaint)
         }
         
-        // Draw detected shape borders
+        // Draw detected shapes as chemical cards
         for (shape in detectedShapes) {
             // 转换相机坐标为视图坐标
             val (transformedX, transformedY) = transformCameraCoordinate(shape.x, shape.y)
             
-            // 绘制双重圆形边框（检测到的形状）
-            val radius = dp(40f) // 固定半径
-            canvas.drawCircle(transformedX, transformedY, radius, shapeBorderPaint) // 外边框（绿色）
-            canvas.drawCircle(transformedX, transformedY, radius - dp(2f), shapeInnerPaint) // 内边框（白色）
+            // 使用ChemicalCard的卡片效果绘制
+            val radius = dp(30f) // 卡片半径
+            val paint = paintFor(shape.type)
             
-            // 绘制元素标签
+            // 绘制化学卡片圆形
+            canvas.drawCircle(transformedX, transformedY, radius, paint)
+            
+            // 绘制化学式标签
             val label = when (shape.type) {
                 ChemicalType.Na -> "Na"
                 ChemicalType.H2O -> "H₂O"
@@ -248,16 +260,8 @@ class BeakerCanvasView @JvmOverloads constructor(
                 ChemicalType.CO2 -> "CO₂"
                 ChemicalType.C -> "C"
             }
-            
-            val textWidth = shapeTextPaint.measureText(label)
-            val textHeight = shapeTextPaint.textSize
-            val textX = transformedX - textWidth / 2f
-            val textY = transformedY - radius - 15f
-            
-            // 绘制元素标签背景
-            canvas.drawRoundRect(textX - 4f, textY - textHeight, textX + textWidth + 4f, textY + 4f, dp(4f), dp(4f), shapeTextBgPaint)
-            // 绘制元素标签文本
-            canvas.drawText(label, textX, textY, shapeTextPaint)
+            val tw = labelPaint.measureText(label)
+            canvas.drawText(label, transformedX - tw / 2f, transformedY + labelPaint.textSize / 3f, labelPaint)
             
             // 绘制坐标信息 - 显示百分比坐标
             val percentX = if (viewWidth > 0) ((transformedX / viewWidth) * 100).toInt() else 0
@@ -268,15 +272,10 @@ class BeakerCanvasView @JvmOverloads constructor(
             val coordX = transformedX - coordWidth / 2f
             val coordY = transformedY + radius + coordHeight + 8f
             
-            // 绘制坐标背景
-            canvas.drawRoundRect(coordX - 3f, coordY - coordHeight, coordX + coordWidth + 3f, coordY + 3f, dp(3f), dp(3f), coordinateTextBgPaint)
-            // 绘制坐标文本
+            // 绘制坐标信息背景
+            canvas.drawRoundRect(coordX - 4f, coordY - coordHeight, coordX + coordWidth + 4f, coordY + 4f, dp(4f), dp(4f), coordinateTextBgPaint)
+            // 绘制坐标信息文本
             canvas.drawText(coordText, coordX, coordY, coordinateTextPaint)
-            
-            // 绘制十字准星
-            val crossSize = dp(8f)
-            canvas.drawLine(transformedX - crossSize, transformedY, transformedX + crossSize, transformedY, shapeBorderPaint)
-            canvas.drawLine(transformedX, transformedY - crossSize, transformedX, transformedY + crossSize, shapeBorderPaint)
         }
 
         // Proximity detection and equation display
@@ -335,6 +334,20 @@ class BeakerCanvasView @JvmOverloads constructor(
                 postInvalidateOnAnimation()
             } else {
                 currentEffect = null
+            }
+        }
+        
+        // Draw floating equation if any
+        val eq = currentEquation
+        if (eq != null) {
+            val now = SystemClock.uptimeMillis()
+            val t = (now - eq.startMs).toFloat() / eq.durationMs
+            if (t in 0f..1f) {
+                drawFloatingEquation(canvas, eq.equation, eq.x, eq.y, t)
+                // keep animating
+                postInvalidateOnAnimation()
+            } else {
+                currentEquation = null
             }
         }
     }
@@ -404,6 +417,109 @@ class BeakerCanvasView @JvmOverloads constructor(
             else -> null
         }
     }
+    
+    // 触发化学反应特效
+    fun triggerReactionEffect(reaction: ChemicalReaction, cameraX: Float, cameraY: Float) {
+        // 转换相机坐标为视图坐标
+        val (viewX, viewY) = transformCameraCoordinate(cameraX, cameraY)
+        
+        // 获取反应方程式
+        val reactantNames = reaction.reactants.map { getChemicalDisplayName(it) }
+        val productNames = reaction.products.map { getChemicalDisplayName(it) }
+        val equation = "${reactantNames.joinToString(" + ")} → ${productNames.joinToString(" + ")}"
+        
+        // 启动悬浮化学式效果
+        currentEquation = FloatingEquation(
+            equation = equation,
+            startMs = SystemClock.uptimeMillis(),
+            x = viewX,
+            y = viewY
+        )
+        
+        // 启动特殊效果
+        val effectTypes = when {
+            reaction.reactants.contains(ChemicalType.Na) && reaction.reactants.contains(ChemicalType.H2O) -> 
+                listOf(EffectType.GAS, EffectType.GLOW)
+            reaction.reactants.contains(ChemicalType.H2) && reaction.reactants.contains(ChemicalType.O2) -> 
+                listOf(EffectType.FIRE, EffectType.GAS)
+            reaction.reactants.contains(ChemicalType.Na) && reaction.reactants.contains(ChemicalType.O2) -> 
+                listOf(EffectType.FIRE, EffectType.GLOW)
+            reaction.reactants.contains(ChemicalType.C) && reaction.reactants.contains(ChemicalType.O2) -> 
+                listOf(EffectType.FIRE, EffectType.GAS)
+            else -> listOf(EffectType.GLOW)
+        }
+        
+        currentEffect = ActiveEffect(
+            types = effectTypes,
+            startMs = SystemClock.uptimeMillis(),
+            x = viewX,
+            y = viewY
+        )
+        
+        invalidate()
+    }
+    
+    private fun getChemicalDisplayName(type: ChemicalType): String {
+        return when (type) {
+            ChemicalType.Na -> "Na"
+            ChemicalType.H2O -> "H₂O"
+            ChemicalType.HCl -> "HCl"
+            ChemicalType.NaOH -> "NaOH"
+            ChemicalType.Cl2 -> "Cl₂"
+            ChemicalType.O2 -> "O₂"
+            ChemicalType.H2 -> "H₂"
+            ChemicalType.CO2 -> "CO₂"
+            ChemicalType.C -> "C"
+        }
+    }
+    
+    // 单位转换方法
+    private fun dp(value: Float): Float = value * resources.displayMetrics.density
+    private fun sp(value: Float): Float = value * resources.displayMetrics.scaledDensity
+    
+    // 绘制悬浮化学式
+    private fun drawFloatingEquation(canvas: Canvas, equation: String, x: Float, y: Float, t: Float) {
+        // 计算动画参数
+        val alpha = when {
+            t < 0.2f -> (t / 0.2f) // 淡入
+            t > 0.8f -> (1f - (t - 0.8f) / 0.2f) // 淡出
+            else -> 1f // 保持
+        }
+        val offsetY = -t * dp(100f) // 向上浮动
+        val scale = 1f + t * 0.5f // 逐渐放大
+        
+        // 设置画笔
+        val equationPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#FFFFFF")
+            textSize = sp(18f) * scale
+            textAlign = Paint.Align.CENTER
+            this.alpha = (255 * alpha).toInt()
+        }
+        
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#88000000")
+            this.alpha = (255 * alpha * 0.8f).toInt()
+        }
+        
+        // 计算文本尺寸
+        val textWidth = equationPaint.measureText(equation)
+        val textHeight = equationPaint.textSize
+        val padding = dp(8f)
+        
+        val drawY = y + offsetY
+        
+        // 绘制背景
+        canvas.drawRoundRect(
+            x - textWidth / 2f - padding,
+            drawY - textHeight - padding,
+            x + textWidth / 2f + padding,
+            drawY + padding,
+            dp(8f), dp(8f), bgPaint
+        )
+        
+        // 绘制化学式
+        canvas.drawText(equation, x, drawY, equationPaint)
+    }
 
     private fun drawGlowEffect(canvas: Canvas, cx: Float, cy: Float, t: Float) {
         val base = dp(60f)
@@ -438,6 +554,4 @@ class BeakerCanvasView @JvmOverloads constructor(
             canvas.drawCircle(rx, ry, r, p)
         }
     }
-
-    private fun dp(v: Float): Float = v * resources.displayMetrics.density
 }
