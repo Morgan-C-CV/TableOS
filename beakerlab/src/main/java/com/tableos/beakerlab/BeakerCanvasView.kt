@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.text.TextPaint
 import android.util.AttributeSet
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.os.SystemClock
@@ -78,6 +79,13 @@ class BeakerCanvasView @JvmOverloads constructor(
     
     // 形状边框标注相关
     private val detectedShapes = mutableListOf<DetectedElement>()
+    
+    // 相机和视图尺寸信息，用于坐标转换
+    private var cameraWidth: Int = 0
+    private var cameraHeight: Int = 0
+    private var viewWidth: Int = 0
+    private var viewHeight: Int = 0
+    
     private val shapeBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = dp(4f)
@@ -124,9 +132,70 @@ class BeakerCanvasView @JvmOverloads constructor(
         invalidate()
     }
     
+    fun setCameraSize(width: Int, height: Int) {
+        cameraWidth = width
+        cameraHeight = height
+        Log.d("BeakerCanvasView", "Camera size set: ${width}x${height}")
+    }
+    
     fun clearDetectedShapes() {
         detectedShapes.clear()
         invalidate()
+    }
+    
+    /**
+     * 将相机坐标转换为视图坐标
+     * 只考虑缩放的影响
+     */
+    private fun transformCameraCoordinate(cameraX: Float, cameraY: Float): Pair<Float, Float> {
+        if (cameraWidth == 0 || cameraHeight == 0 || viewWidth == 0 || viewHeight == 0) {
+            // 如果尺寸信息不完整，返回原始坐标
+            return Pair(cameraX, cameraY)
+        }
+        
+        // 步骤1: 将相机坐标转换为归一化坐标 (0-1)
+        val normalizedX = cameraX / cameraWidth.toFloat()
+        val normalizedY = cameraY / cameraHeight.toFloat()
+        
+        // 步骤2: 计算缩放比例以填满整个视图
+        val cameraAspectRatio = cameraWidth.toFloat() / cameraHeight.toFloat()
+        val viewAspectRatio = viewWidth.toFloat() / viewHeight.toFloat()
+        
+        val scaleX: Float
+        val scaleY: Float
+        
+        if (cameraAspectRatio > viewAspectRatio) {
+            // 相机更宽，以高度为准进行缩放
+            scaleY = 1.0f
+            scaleX = viewAspectRatio / cameraAspectRatio
+        } else {
+            // 相机更高，以宽度为准进行缩放
+            scaleX = 1.0f
+            scaleY = cameraAspectRatio / viewAspectRatio
+        }
+        
+        // 使用较大的缩放比例以填满整个视图
+        val finalScale = maxOf(scaleX, scaleY)
+        
+        // 步骤3: 应用缩放并转换为视图像素坐标
+        val scaledX = normalizedX * finalScale
+        val scaledY = normalizedY * finalScale
+        
+        // 步骤4: 居中显示
+        val offsetX = (1.0f - finalScale) / 2.0f
+        val offsetY = (1.0f - finalScale) / 2.0f
+        
+        val viewX = (scaledX + offsetX) * viewWidth
+        val viewY = (scaledY + offsetY) * viewHeight
+        
+        return Pair(viewX, viewY)
+    }
+    
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        viewWidth = w
+        viewHeight = h
+        Log.d("BeakerCanvasView", "View size changed: ${w}x${h}")
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -153,10 +222,13 @@ class BeakerCanvasView @JvmOverloads constructor(
         
         // Draw detected shape borders
         for (shape in detectedShapes) {
+            // 转换相机坐标为视图坐标
+            val (transformedX, transformedY) = transformCameraCoordinate(shape.x, shape.y)
+            
             // 绘制双重圆形边框（检测到的形状）
             val radius = dp(40f) // 固定半径
-            canvas.drawCircle(shape.x, shape.y, radius, shapeBorderPaint) // 外边框（绿色）
-            canvas.drawCircle(shape.x, shape.y, radius - dp(2f), shapeInnerPaint) // 内边框（白色）
+            canvas.drawCircle(transformedX, transformedY, radius, shapeBorderPaint) // 外边框（绿色）
+            canvas.drawCircle(transformedX, transformedY, radius - dp(2f), shapeInnerPaint) // 内边框（白色）
             
             // 绘制元素标签
             val label = when (shape.type) {
@@ -173,20 +245,22 @@ class BeakerCanvasView @JvmOverloads constructor(
             
             val textWidth = shapeTextPaint.measureText(label)
             val textHeight = shapeTextPaint.textSize
-            val textX = shape.x - textWidth / 2f
-            val textY = shape.y - radius - 15f
+            val textX = transformedX - textWidth / 2f
+            val textY = transformedY - radius - 15f
             
             // 绘制元素标签背景
             canvas.drawRoundRect(textX - 4f, textY - textHeight, textX + textWidth + 4f, textY + 4f, dp(4f), dp(4f), shapeTextBgPaint)
             // 绘制元素标签文本
             canvas.drawText(label, textX, textY, shapeTextPaint)
             
-            // 绘制坐标信息
-            val coordText = "(${shape.x.toInt()}, ${shape.y.toInt()})"
+            // 绘制坐标信息 - 显示百分比坐标
+            val percentX = if (viewWidth > 0) ((transformedX / viewWidth) * 100).toInt() else 0
+            val percentY = if (viewHeight > 0) ((transformedY / viewHeight) * 100).toInt() else 0
+            val coordText = "(${percentX}%, ${percentY}%)"
             val coordWidth = coordinateTextPaint.measureText(coordText)
             val coordHeight = coordinateTextPaint.textSize
-            val coordX = shape.x - coordWidth / 2f
-            val coordY = shape.y + radius + coordHeight + 8f
+            val coordX = transformedX - coordWidth / 2f
+            val coordY = transformedY + radius + coordHeight + 8f
             
             // 绘制坐标背景
             canvas.drawRoundRect(coordX - 3f, coordY - coordHeight, coordX + coordWidth + 3f, coordY + 3f, dp(3f), dp(3f), coordinateTextBgPaint)
@@ -195,8 +269,8 @@ class BeakerCanvasView @JvmOverloads constructor(
             
             // 绘制十字准星
             val crossSize = dp(8f)
-            canvas.drawLine(shape.x - crossSize, shape.y, shape.x + crossSize, shape.y, shapeBorderPaint)
-            canvas.drawLine(shape.x, shape.y - crossSize, shape.x, shape.y + crossSize, shapeBorderPaint)
+            canvas.drawLine(transformedX - crossSize, transformedY, transformedX + crossSize, transformedY, shapeBorderPaint)
+            canvas.drawLine(transformedX, transformedY - crossSize, transformedX, transformedY + crossSize, shapeBorderPaint)
         }
 
         // Proximity detection and equation display

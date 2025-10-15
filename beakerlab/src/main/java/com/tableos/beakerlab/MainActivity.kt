@@ -301,6 +301,12 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
             reactionEngine.setImageSize(bitmap.width, bitmap.height)
             imageSizeSet = true
             Log.d(TAG, "Set image size for reaction engine: ${bitmap.width}x${bitmap.height}")
+            
+            // 同时设置BeakerCanvasView的相机尺寸
+            runOnUiThread {
+                val beakerCanvasView = findViewById<BeakerCanvasView>(R.id.canvas)
+                beakerCanvasView.setCameraSize(bitmap.width, bitmap.height)
+            }
         }
         
         // Use shape detection to find colored squares
