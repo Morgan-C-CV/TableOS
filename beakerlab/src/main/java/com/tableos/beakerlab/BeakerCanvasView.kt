@@ -158,11 +158,12 @@ class BeakerCanvasView @JvmOverloads constructor(
     
     /**
      * 将相机坐标转换为视图坐标
-     * 考虑相机旋转270度和缩放的影响
+     * 现在相机输出4:3横向图像，不需要旋转变换
      */
     private fun transformCameraCoordinate(cameraX: Float, cameraY: Float): Pair<Float, Float> {
         if (cameraWidth == 0 || cameraHeight == 0 || viewWidth == 0 || viewHeight == 0) {
             // 如果尺寸信息不完整，返回原始坐标
+            Log.w("BeakerCanvasView", "Size info incomplete: camera=${cameraWidth}x${cameraHeight}, view=${viewWidth}x${viewHeight}")
             return Pair(cameraX, cameraY)
         }
         
@@ -170,42 +171,35 @@ class BeakerCanvasView @JvmOverloads constructor(
         val normalizedX = cameraX / cameraWidth.toFloat()
         val normalizedY = cameraY / cameraHeight.toFloat()
         
-        // 步骤2: 应用逆时针90度旋转变换来纠正摄像机的顺时针90度旋转
-        // 逆时针90度旋转: x' = y, y' = 1 - x
-        val rotatedX = normalizedY
-        val rotatedY = 1.0f - normalizedX
-        
-        // 步骤3: 计算缩放比例以填满整个视图
-        // 由于旋转了90度，相机的宽高对应关系发生了变化
-        val cameraAspectRatio = cameraHeight.toFloat() / cameraWidth.toFloat() // 旋转后的宽高比
+        // 步骤2: 计算缩放比例以适应视图
+        val cameraAspectRatio = cameraWidth.toFloat() / cameraHeight.toFloat() // 4:3 = 1.33
         val viewAspectRatio = viewWidth.toFloat() / viewHeight.toFloat()
         
         val scaleX: Float
         val scaleY: Float
+        val offsetX: Float
+        val offsetY: Float
         
         if (cameraAspectRatio > viewAspectRatio) {
-            // 相机更宽，以高度为准进行缩放
-            scaleY = 1.0f
-            scaleX = viewAspectRatio / cameraAspectRatio
-        } else {
-            // 相机更高，以宽度为准进行缩放
+            // 相机更宽，以视图宽度为准进行缩放
             scaleX = 1.0f
-            scaleY = cameraAspectRatio / viewAspectRatio
+            scaleY = viewAspectRatio / cameraAspectRatio
+            offsetX = 0.0f
+            offsetY = (1.0f - scaleY) / 2.0f
+        } else {
+            // 相机更高，以视图高度为准进行缩放
+            scaleX = cameraAspectRatio / viewAspectRatio
+            scaleY = 1.0f
+            offsetX = (1.0f - scaleX) / 2.0f
+            offsetY = 0.0f
         }
         
-        // 使用较大的缩放比例以填满整个视图
-        val finalScale = maxOf(scaleX, scaleY)
+        // 步骤3: 应用缩放和偏移，转换为视图像素坐标
+        val viewX = (normalizedX * scaleX + offsetX) * viewWidth
+        val viewY = (normalizedY * scaleY + offsetY) * viewHeight
         
-        // 步骤4: 应用缩放并转换为视图像素坐标
-        val scaledX = rotatedX * finalScale
-        val scaledY = rotatedY * finalScale
-        
-        // 步骤5: 居中显示
-        val offsetX = (1.0f - finalScale) / 2.0f
-        val offsetY = (1.0f - finalScale) / 2.0f
-        
-        val viewX = (scaledX + offsetX) * viewWidth
-        val viewY = (scaledY + offsetY) * viewHeight
+        Log.d("BeakerCanvasView", "Transform: camera(${cameraX}, ${cameraY}) -> normalized(${normalizedX}, ${normalizedY}) -> view(${viewX}, ${viewY})")
+        Log.d("BeakerCanvasView", "Ratios: camera=${cameraAspectRatio}, view=${viewAspectRatio}, scale=(${scaleX}, ${scaleY}), offset=(${offsetX}, ${offsetY})")
         
         return Pair(viewX, viewY)
     }

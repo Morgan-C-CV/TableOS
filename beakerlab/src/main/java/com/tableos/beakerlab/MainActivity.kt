@@ -279,13 +279,28 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
     private var shouldSaveDebugImage = false
     private val imageLock = Object()
     
+    // 频率控制变量
+    private var frameCounter = 0
+    private val DETECTION_FRAME_INTERVAL = 5 // 每5帧检测一次，约6FPS检测频率
+    private var lastDetectionTime = 0L
+    private val MIN_DETECTION_INTERVAL_MS = 200L // 最小检测间隔200ms
+    
     // CameraManager.FrameCallback implementation
     override fun onFrameAvailable(image: Image) {
         // Convert Image to Bitmap and process with shape detection
         try {
             val bitmap = imageToBitmap(image)
             if (bitmap != null) {
-                processFrameForReactions(bitmap)
+                // 频率控制：只在特定帧进行检测
+                frameCounter++
+                val currentTime = System.currentTimeMillis()
+                
+                if (frameCounter >= DETECTION_FRAME_INTERVAL && 
+                    (currentTime - lastDetectionTime) >= MIN_DETECTION_INTERVAL_MS) {
+                    frameCounter = 0
+                    lastDetectionTime = currentTime
+                    processFrameForReactions(bitmap)
+                }
                 
                 // 检查是否需要保存调试图像
                 synchronized(imageLock) {
@@ -433,18 +448,29 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
         
         // Use shape detection to find colored squares
         val detectionResult = ShapeDetectorJNI.detectShapesFromBitmap(bitmap)
+        
+        // 打印NDK返回的原始JSON检测结果
+        Log.i(TAG, "=== NDK检测原始结果 ===")
+        Log.i(TAG, "检测结果长度: ${detectionResult.length}")
         if (detectionResult.isNotEmpty()) {
+            Log.i(TAG, "原始JSON: $detectionResult")
+            
             // Parse detection results and check for reactions
             val elements = reactionEngine.parseDetectedElements(detectionResult)
+            Log.i(TAG, "解析后的元素数量: ${elements.size}")
             
             // 将检测到的形状传递给BeakerCanvasView进行显示
             runOnUiThread {
                 val beakerCanvasView = findViewById<BeakerCanvasView>(R.id.canvas)
                 beakerCanvasView.updateDetectedShapes(elements)
+                Log.i(TAG, "已更新BeakerCanvasView，元素数量: ${elements.size}")
             }
             
             reactionEngine.detectReactions(elements)
+        } else {
+            Log.i(TAG, "检测结果为空")
         }
+        Log.i(TAG, "=== 检测结果结束 ===")
     }
     
     // ChemicalReactionEngine.ReactionCallback implementation

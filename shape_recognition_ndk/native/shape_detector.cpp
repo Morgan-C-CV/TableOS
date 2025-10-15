@@ -22,23 +22,14 @@ std::map<std::string, ColorRange> getDefaultColorRanges() {
     // 大幅扩展所有颜色的HSV识别范围以提高识别效果
     // 降低饱和度和亮度的最低要求，扩大色调范围
     
-    // 黄色 - 进一步扩展范围，包含更广泛的黄色色调
-    // 色调范围: 10-65° (扩大范围，包含橙黄、纯黄、黄绿)
-    // 饱和度: 20-255 (进一步降低要求，包含更浅的黄色)
-    // 亮度: 60-255 (降低要求，包含更暗的黄色)
-    colorRanges["Yellow"] = ColorRange(cv::Scalar(30, 20, 120), cv::Scalar(55, 255, 255));
+    // 黄色 - 使用test_realtime_camera.cpp中验证过的范围
+    colorRanges["Yellow"] = ColorRange(cv::Scalar(10, 20, 60), cv::Scalar(65, 255, 255));
     
-    // 绿色 - 扩展范围，包含黄绿到青绿色调
-    // 色调范围: 40-85° (包含黄绿、纯绿、青绿)
-    // 饱和度: 30-255 (降低要求，包含浅绿色)
-    // 亮度: 60-255 (降低要求，包含暗绿色)
-    colorRanges["Green"] = ColorRange(cv::Scalar(40, 30, 60), cv::Scalar(95, 255, 255));
+    // 绿色 - 使用test_realtime_camera.cpp中验证过的范围
+    colorRanges["Green"] = ColorRange(cv::Scalar(40, 40, 60), cv::Scalar(85, 255, 255));
     
-    // 青色 - 扩展范围，包含绿青到蓝青色调
-    // 色调范围: 75-115° (包含绿青、纯青、蓝青)
-    // 饱和度: 40-255 (降低要求，包含浅青色)
-    // 亮度: 70-255 (降低要求，包含暗青色)
-    colorRanges["Cyan"] = ColorRange(cv::Scalar(100, 50, 180), cv::Scalar(120, 255, 255));
+    // 青色 - 使用test_realtime_camera.cpp中验证过的范围
+    colorRanges["Cyan"] = ColorRange(cv::Scalar(95, 50, 110), cv::Scalar(120, 255, 255));
     
     // 蓝色 - 扩展范围，包含青蓝到紫蓝色调
     // 色调范围: 100-140° (包含青蓝、纯蓝、紫蓝)
@@ -489,8 +480,8 @@ DetectionResult detectShapes(const cv::Mat& image, bool debug) {
         for (const auto& contour : contours) {
             double area = cv::contourArea(contour);
             
-            // 过滤太小的轮廓 - 与isRectangle函数保持一致的严格阈值
-            if (area < 2000) {  // 与isRectangle函数保持一致，只检测较大的形状
+            // 过滤不合适的轮廓 - 使用test_realtime_camera.cpp中的合理面积范围
+            if (area < 900 || area > 1400) {  // 使用合理的面积范围，过滤太小和太大的形状
                 continue;
             }
             
@@ -518,8 +509,8 @@ DetectionResult detectShapes(const cv::Mat& image, bool debug) {
             // 计算置信度分数
             double confidence = calculateShapeConfidence(contour, shape.type);
             
-            // 过滤低置信度的检测结果 - 提高阈值以减少噪音
-            if (confidence < 0.6) {  // 提高置信度阈值，只保留高质量检测结果
+            // 过滤低置信度的检测结果 - 降低阈值以提高检测敏感度
+            if (confidence < 0.3) {  // 大幅降低置信度阈值，提高检测敏感度
                 continue;
             }
             
