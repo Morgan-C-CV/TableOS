@@ -19,27 +19,38 @@ cv::Mat loadImage(const std::string& path) {
 std::map<std::string, ColorRange> getDefaultColorRanges() {
     std::map<std::string, ColorRange> colorRanges;
     
-    // 基于实际图像颜色分析重新定义HSV范围
-    // 黄色方块实际HSV: (36.8°, 146.4, 223.0)
+    // 大幅扩展所有颜色的HSV识别范围以提高识别效果
+    // 降低饱和度和亮度的最低要求，扩大色调范围
     
-    // 黄色 (Na方块) - 扩展范围以包含实际的36.8°色调
-    // 降低饱和度和亮度要求以适应实际颜色
-    colorRanges["Yellow"] = ColorRange(cv::Scalar(25, 80, 150), cv::Scalar(45, 255, 255));
+    // 黄色 - 进一步扩展范围，包含更广泛的黄色色调
+    // 色调范围: 10-65° (扩大范围，包含橙黄、纯黄、黄绿)
+    // 饱和度: 20-255 (进一步降低要求，包含更浅的黄色)
+    // 亮度: 60-255 (降低要求，包含更暗的黄色)
+    colorRanges["Yellow"] = ColorRange(cv::Scalar(10, 20, 90), cv::Scalar(55, 255, 255));
     
-    // 绿色 (Q方块) - 调整为不与黄色重叠的纯绿色范围
-    // 从45°开始，避免与黄色重叠
-    colorRanges["Green"] = ColorRange(cv::Scalar(45, 100, 100), cv::Scalar(75, 255, 255));
+    // 绿色 - 扩展范围，包含黄绿到青绿色调
+    // 色调范围: 40-85° (包含黄绿、纯绿、青绿)
+    // 饱和度: 30-255 (降低要求，包含浅绿色)
+    // 亮度: 60-255 (降低要求，包含暗绿色)
+    colorRanges["Green"] = ColorRange(cv::Scalar(40, 30, 60), cv::Scalar(85, 255, 255));
     
-    // 青色 (H₂方块) - 青色到浅蓝色范围
-    // 从75°开始，避免与绿色重叠
-    colorRanges["Cyan"] = ColorRange(cv::Scalar(75, 100, 120), cv::Scalar(105, 255, 255));
+    // 青色 - 扩展范围，包含绿青到蓝青色调
+    // 色调范围: 75-115° (包含绿青、纯青、蓝青)
+    // 饱和度: 40-255 (降低要求，包含浅青色)
+    // 亮度: 70-255 (降低要求，包含暗青色)
+    colorRanges["Cyan"] = ColorRange(cv::Scalar(90, 40, 160), cv::Scalar(105, 255, 255));
     
-    // 蓝色 (H₂O方块) - 深蓝到紫蓝色范围
-    // 从105°开始，避免与青色重叠
-    colorRanges["Blue"] = ColorRange(cv::Scalar(105, 100, 100), cv::Scalar(140, 255, 255));
+    // 蓝色 - 扩展范围，包含青蓝到紫蓝色调
+    // 色调范围: 100-140° (包含青蓝、纯蓝、紫蓝)
+    // 饱和度: 40-255 (降低要求，包含浅蓝色)
+    // 亮度: 60-255 (降低要求，包含暗蓝色)
+    colorRanges["Blue"] = ColorRange(cv::Scalar(100, 40, 60), cv::Scalar(140, 255, 255));
     
-    // 黑色检测范围保持不变
-    colorRanges["Black"] = ColorRange(cv::Scalar(0, 0, 0), cv::Scalar(180, 50, 30));
+    // 黑色 - 缩小范围，更精确识别黑色
+    // 色调范围: 0-180° (全色调，保持不变)
+    // 饱和度: 0-50 (降低饱和度上限，减少误识别)
+    // 亮度: 0-40 (降低亮度上限，更严格的黑色识别)
+    colorRanges["Black"] = ColorRange(cv::Scalar(0, 0, 0), cv::Scalar(180, 50, 40));
     
     return colorRanges;
 }
