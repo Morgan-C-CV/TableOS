@@ -96,6 +96,9 @@ class BeakerCanvasView @JvmOverloads constructor(
     private var viewWidth: Int = 0
     private var viewHeight: Int = 0
     
+    // 预览模式状态
+    private var isPreviewMode: Boolean = false
+    
     private val shapeBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = dp(4f)
@@ -167,10 +170,10 @@ class BeakerCanvasView @JvmOverloads constructor(
         val normalizedX = cameraX / cameraWidth.toFloat()
         val normalizedY = cameraY / cameraHeight.toFloat()
         
-        // 步骤2: 应用270度旋转变换 (相当于逆时针旋转270度或顺时针旋转90度)
-        // 旋转后: x' = 1 - y, y' = x
-        val rotatedX = 1.0f - normalizedY
-        val rotatedY = normalizedX
+        // 步骤2: 应用逆时针90度旋转变换来纠正摄像机的顺时针90度旋转
+        // 逆时针90度旋转: x' = y, y' = 1 - x
+        val rotatedX = normalizedY
+        val rotatedY = 1.0f - normalizedX
         
         // 步骤3: 计算缩放比例以填满整个视图
         // 由于旋转了90度，相机的宽高对应关系发生了变化
@@ -216,6 +219,13 @@ class BeakerCanvasView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        
+        // 如果是预览模式，设置canvas透明度为0以显示相机视角
+        if (isPreviewMode) {
+            canvas.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), 0)
+            canvas.restore()
+            return
+        }
 
         // Draw cards
         for (c in cards) {
@@ -355,13 +365,22 @@ class BeakerCanvasView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                val id = hitTest(event.x, event.y)
-                if (id != null) {
-                    activeId = id
-                    lastX = event.x
-                    lastY = event.y
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                    return true
+                // 检查是否为左键点击（主按钮）
+                if (event.buttonState == MotionEvent.BUTTON_PRIMARY || event.buttonState == 0) {
+                    // 检查是否点击到化学卡片
+                    val id = hitTest(event.x, event.y)
+                    if (id != null) {
+                        activeId = id
+                        lastX = event.x
+                        lastY = event.y
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                        return true
+                    } else {
+                        // 如果没有点击到卡片，则切换预览模式
+                        isPreviewMode = !isPreviewMode
+                        invalidate() // 重新绘制
+                        return true
+                    }
                 }
             }
             MotionEvent.ACTION_MOVE -> {

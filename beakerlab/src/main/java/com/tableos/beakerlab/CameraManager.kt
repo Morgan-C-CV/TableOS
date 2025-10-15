@@ -301,42 +301,32 @@ class CameraManager(private val context: Context) {
         val textureView = this.textureView ?: return
         if (viewWidth == 0 || viewHeight == 0) return
         
-        val rotation = computeTotalRotation()
         val matrix = Matrix()
-        
-        // 根据计算出的旋转角度设置变换矩阵
-        // 如果相机传感器是90度，我们需要逆向旋转270度来修正
-        val rotationDegrees = when (rotation) {
-            90 -> 270f  // 改为270度来修正90度的旋转
-            180 -> 180f
-            270 -> 90f  // 改为90度来修正270度的旋转
-            else -> 0f
-        }
-        
         val centerX = viewWidth / 2f
         val centerY = viewHeight / 2f
         
-        if (rotationDegrees != 0f) {
-            // 先旋转
-            matrix.postRotate(rotationDegrees, centerX, centerY)
-            
-            // 计算旋转后需要的缩放比例来填满视图并消除白边
-            if (rotationDegrees == 90f || rotationDegrees == 270f) {
-                // 90度或270度旋转时，宽高互换
-                val scaleX = viewHeight.toFloat() / viewWidth.toFloat()
-                val scaleY = viewWidth.toFloat() / viewHeight.toFloat()
-                
-                // 使用较大的缩放比例来确保填满整个视图
-                val scale = maxOf(scaleX, scaleY)
-                matrix.postScale(scale, scale, centerX, centerY)
-                
-                Log.d(TAG, "Applied scaling: scaleX=$scaleX, scaleY=$scaleY, finalScale=$scale")
-            }
-        }
+        // 将相机图像逆时针旋转90度来修正显示方向
+        val rotationDegrees = -90f  // 负值表示逆时针旋转
+        
+        // 应用旋转变换
+        matrix.postRotate(rotationDegrees, centerX, centerY)
+        
+        // 旋转90度后需要调整缩放比例来填满视图
+        // 由于旋转了90度，宽高互换，需要计算合适的缩放比例
+        val scaleX = viewHeight.toFloat() / viewWidth.toFloat()
+        val scaleY = viewWidth.toFloat() / viewHeight.toFloat()
+        
+        // 使用较大的缩放比例来确保填满整个视图
+        val scale = maxOf(scaleX, scaleY)
+        matrix.postScale(scale, scale, centerX, centerY)
+        
+        // 获取相机传感器方向用于日志
+        val characteristics = cameraCharacteristics
+        val sensorOrientation = characteristics?.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
         
         // 应用变换矩阵到TextureView
         textureView.setTransform(matrix)
-        Log.d(TAG, "Applied camera transform: rotation=${rotationDegrees}°, viewSize=${viewWidth}x${viewHeight}")
+        Log.d(TAG, "Applied camera transform: rotation=${rotationDegrees}°, scale=${scale}, sensorOrientation=${sensorOrientation}°, viewSize=${viewWidth}x${viewHeight}")
     }
     
     private fun startBackgroundThread() {

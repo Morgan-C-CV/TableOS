@@ -131,6 +131,11 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
                 // 设置图像尺寸用于反应引擎
                 reactionEngine.setImageSize(bitmap.width, bitmap.height)
                 
+                // 设置BeakerCanvasView的相机尺寸
+                val beakerCanvasView = findViewById<BeakerCanvasView>(R.id.canvas)
+                beakerCanvasView.setCameraSize(bitmap.width, bitmap.height)
+                Log.i(TAG, "Set camera size for BeakerCanvasView: ${bitmap.width}x${bitmap.height}")
+                
                 // 执行形状检测并获取 JSON 结果
                 val jsonResult = ShapeDetectorJNI.detectShapesFromBitmap(bitmap)
                 Log.i(TAG, "Shape detection result: $jsonResult")
@@ -141,7 +146,6 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
                     Log.i(TAG, "Parsed elements: $elements")
                     
                     // 将检测到的形状传递给BeakerCanvasView
-                    val beakerCanvasView = findViewById<BeakerCanvasView>(R.id.canvas)
                     beakerCanvasView.updateDetectedShapes(elements)
                     
                     reactionEngine.detectReactions(elements)
@@ -456,9 +460,24 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
         
         // 获取当前摄像头帧
         try {
-            val bitmap = cameraTextureView.getBitmap()
-            if (bitmap != null) {
-                Log.i(TAG, "获取到摄像头帧，开始保存调试图片")
+            val originalBitmap = cameraTextureView.getBitmap()
+            if (originalBitmap != null) {
+                Log.i(TAG, "获取到摄像头帧，开始应用旋转变换")
+                
+                // 手动应用逆时针90度旋转，与相机预览保持一致
+                val matrix = android.graphics.Matrix()
+                matrix.postRotate(-90f)
+                
+                val rotatedBitmap = Bitmap.createBitmap(
+                    originalBitmap, 
+                    0, 0, 
+                    originalBitmap.width, 
+                    originalBitmap.height, 
+                    matrix, 
+                    true
+                )
+                
+                Log.i(TAG, "图像旋转完成，原始尺寸: ${originalBitmap.width}x${originalBitmap.height}, 旋转后尺寸: ${rotatedBitmap.width}x${rotatedBitmap.height}")
                 
                 // 创建保存路径
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
@@ -471,8 +490,8 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
                 val basePath = debugDir.absolutePath
                 val baseFileName = "beaker_debug_$timestamp"
                 
-                // 调用JNI方法保存调试图片
-                val result = ShapeDetectorJNI.saveDebugImages(bitmap, basePath + "/" + baseFileName)
+                // 调用JNI方法保存旋转后的调试图片
+                val result = ShapeDetectorJNI.saveDebugImages(rotatedBitmap, basePath + "/" + baseFileName)
                 
                 if (result.isNotEmpty() && !result.contains("Error")) {
                     Log.i(TAG, "调试图片保存成功: $result")
@@ -486,6 +505,10 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
                     Log.e(TAG, "调试图片保存失败: $result")
                     Toast.makeText(this, "调试图片保存失败: $result", Toast.LENGTH_SHORT).show()
                 }
+                
+                // 释放bitmap资源
+                originalBitmap.recycle()
+                rotatedBitmap.recycle()
             } else {
                 Log.w(TAG, "无法获取摄像头帧")
                 Toast.makeText(this, "无法获取当前摄像头画面", Toast.LENGTH_SHORT).show()
