@@ -26,6 +26,13 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import kotlin.math.roundToInt
 import java.nio.ByteBuffer
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.os.Environment
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.*
 // 使用本模块内的 KeystoneWarpLayout（com.tableos.beakerlab.KeystoneWarpLayout）
 
 class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalReactionEngine.ReactionCallback {
@@ -40,8 +47,9 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
     private lateinit var reactionStatusText: TextView
     private val reactionHistory = mutableListOf<String>()
     
-    // Permission request code
+    // Permission request codes
     private val CAMERA_PERMISSION_REQUEST_CODE = 1001
+    private val STORAGE_PERMISSION_REQUEST_CODE = 1002
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -199,6 +207,11 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
                 KeyEvent.KEYCODE_DPAD_DOWN -> {
                     if (inLighting) { adjustBrightnessBy(-0.1f); return true }
                 }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    // 按下遥控器右键时保存调试图片
+                    saveDebugImages()
+                    return true
+                }
             }
         }
         return super.dispatchKeyEvent(event)
@@ -213,13 +226,41 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
         ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), CAMERA_PERMISSION_REQUEST_CODE)
     }
     
+    private fun checkStoragePermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10+ 不需要存储权限来保存到相册
+            true
+        } else {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+    
+    private fun requestStoragePermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            ActivityCompat.requestPermissions(
+                this, 
+                arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE), 
+                STORAGE_PERMISSION_REQUEST_CODE
+            )
+        }
+    }
+    
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startCamera()
-            } else {
-                Toast.makeText(this, "需要相机权限才能进行化学反应检测", Toast.LENGTH_LONG).show()
+        when (requestCode) {
+            CAMERA_PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    startCamera()
+                } else {
+                    Toast.makeText(this, "需要相机权限才能进行化学反应检测", Toast.LENGTH_LONG).show()
+                }
+            }
+            STORAGE_PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    Toast.makeText(this, "存储权限已获取", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "需要存储权限才能保存调试图片", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -400,6 +441,78 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
             "钠氧化反应" -> Color.parseColor("#FFA500") // 橙色，表示氧化
             "水的混合", "氢气混合", "氧气混合" -> Color.parseColor("#4CAF50") // 绿色，表示混合
             else -> Color.parseColor("#2196F3") // 蓝色，默认颜色
+        }
+    }
+    
+    private fun saveDebugImages() {
+        Log.i(TAG, "保存调试图片被触发")
+        
+        // 检查存储权限
+        if (!checkStoragePermission()) {
+            Log.w(TAG, "没有存储权限，请求权限")
+            requestStoragePermission()
+            return
+        }
+        
+        // 获取当前摄像头帧
+        try {
+            val bitmap = cameraTextureView.getBitmap()
+            if (bitmap != null) {
+                Log.i(TAG, "获取到摄像头帧，开始保存调试图片")
+                
+                // 创建保存路径
+                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                val debugDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "BeakerLab_Debug")
+                
+                if (!debugDir.exists()) {
+                    debugDir.mkdirs()
+                }
+                
+                val basePath = debugDir.absolutePath
+                val baseFileName = "beaker_debug_$timestamp"
+                
+                // 调用JNI方法保存调试图片
+                val result = ShapeDetectorJNI.saveDebugImages(bitmap, basePath + "/" + baseFileName)
+                
+                if (result.isNotEmpty() && !result.contains("Error")) {
+                    Log.i(TAG, "调试图片保存成功: $result")
+                    Toast.makeText(this, "调试图片已保存到相册", Toast.LENGTH_SHORT).show()
+                    
+                    // 如果是Android 10+，需要将文件添加到MediaStore
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        addImagesToMediaStore(baseFileName, timestamp)
+                    }
+                } else {
+                    Log.e(TAG, "调试图片保存失败: $result")
+                    Toast.makeText(this, "调试图片保存失败: $result", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Log.w(TAG, "无法获取摄像头帧")
+                Toast.makeText(this, "无法获取当前摄像头画面", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "保存调试图片时发生错误", e)
+            Toast.makeText(this, "保存调试图片时发生错误: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    private fun addImagesToMediaStore(baseFileName: String, timestamp: String) {
+        // Android 10+ 将图片添加到MediaStore
+        val imageTypes = arrayOf("original", "red_mask", "green_mask", "blue_mask", "yellow_mask", "cyan_mask", "magenta_mask", "combined")
+        
+        for (imageType in imageTypes) {
+            try {
+                val fileName = "${baseFileName}_${imageType}.jpg"
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/BeakerLab_Debug")
+                }
+                
+                contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+            } catch (e: Exception) {
+                Log.e(TAG, "添加图片到MediaStore失败: $imageType", e)
+            }
         }
     }
     

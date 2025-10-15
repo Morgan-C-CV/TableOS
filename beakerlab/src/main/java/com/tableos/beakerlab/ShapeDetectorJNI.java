@@ -38,4 +38,12 @@ public class ShapeDetectorJNI {
      * @return Version string
      */
     public static native String getVersion();
+    
+    /**
+     * Save debug images including all color masks and hull drawings
+     * @param bitmap Input bitmap
+     * @param savePath Directory path to save debug images
+     * @return Result message
+     */
+    public static native String saveDebugImages(Bitmap bitmap, String savePath);
 }
