@@ -239,35 +239,59 @@ class CameraManager(private val context: Context) {
     }
     
     private fun chooseOptimalSize(choices: Array<Size>?): Size {
-        if (choices == null) return Size(1280, 720)
+        if (choices == null) return Size(1280, 960)
         
-        // 优先选择高分辨率以提高识别精度
-        val preferredSizes = listOf(
-            Size(1920, 1080),  // Full HD
-            Size(1600, 1200),  // UXGA
-            Size(1280, 960),   // SXGA
-            Size(1280, 720),   // HD
-            Size(1024, 768),   // XGA
-            Size(800, 600),    // SVGA
-            Size(640, 480)     // VGA (fallback)
+        // 优先选择4:3比例的分辨率，以匹配4:3横屏显示
+        val preferred43Sizes = listOf(
+            Size(1600, 1200),  // UXGA 4:3
+            Size(1280, 960),   // SXGA 4:3
+            Size(1024, 768),   // XGA 4:3
+            Size(800, 600),    // SVGA 4:3
+            Size(640, 480)     // VGA 4:3 (fallback)
         )
         
-        // 查找最接近的支持分辨率
-        for (preferred in preferredSizes) {
+        // 备选16:9分辨率（如果没有4:3可用）
+        val fallback169Sizes = listOf(
+            Size(1920, 1080),  // Full HD 16:9
+            Size(1280, 720),   // HD 16:9
+            Size(960, 540)     // qHD 16:9
+        )
+        
+        // 首先查找4:3比例的分辨率
+        for (preferred in preferred43Sizes) {
             val match = choices.find { 
                 it.width == preferred.width && it.height == preferred.height 
             }
             if (match != null) {
-                Log.d(TAG, "Selected camera resolution: ${match.width}x${match.height}")
+                Log.d(TAG, "Selected 4:3 camera resolution: ${match.width}x${match.height}")
                 return match
             }
         }
         
-        // 如果没有找到首选分辨率，选择不超过 1920x1080 的最大尺寸
-        val candidates = choices.filter { it.width <= 1920 && it.height <= 1080 }
-        val largest = candidates.maxByOrNull { it.width * it.height }
+        // 如果没有找到4:3分辨率，使用16:9作为备选
+        for (preferred in fallback169Sizes) {
+            val match = choices.find { 
+                it.width == preferred.width && it.height == preferred.height 
+            }
+            if (match != null) {
+                Log.d(TAG, "Selected 16:9 camera resolution (fallback): ${match.width}x${match.height}")
+                return match
+            }
+        }
         
-        return largest ?: choices.firstOrNull() ?: Size(1280, 720)
+        // 最后的备选方案：选择最接近4:3比例的分辨率
+        val target43Ratio = 4.0f / 3.0f
+        val best43Match = choices.minByOrNull { size ->
+            val ratio = size.width.toFloat() / size.height.toFloat()
+            kotlin.math.abs(ratio - target43Ratio)
+        }
+        
+        if (best43Match != null) {
+            Log.d(TAG, "Selected closest to 4:3 ratio: ${best43Match.width}x${best43Match.height}")
+            return best43Match
+        }
+        
+        return choices.firstOrNull() ?: Size(1280, 960)
     }
     
     private fun computeTotalRotation(): Int {
@@ -302,31 +326,36 @@ class CameraManager(private val context: Context) {
         if (viewWidth == 0 || viewHeight == 0) return
         
         val matrix = Matrix()
+        val rotation = 270f // 逆时针旋转90度
+        
+        // 相机输出尺寸（在setDefaultBufferSize中设置）
+        val cameraWidth = 640f
+        val cameraHeight = 480f
+        
+        // 计算中心点
         val centerX = viewWidth / 2f
         val centerY = viewHeight / 2f
         
-        // 将相机图像逆时针旋转90度来修正显示方向
-        val rotationDegrees = -90f  // 负值表示逆时针旋转
+        // 先旋转，再缩放
+        matrix.postRotate(rotation, centerX, centerY)
         
-        // 应用旋转变换
-        matrix.postRotate(rotationDegrees, centerX, centerY)
+        // 旋转90度后，需要重新计算缩放比例
+        // 旋转后相机的640x480变成了480x640的显示效果
+        val scaleX = viewWidth.toFloat() / cameraHeight   // viewWidth / 480
+        val scaleY = viewHeight.toFloat() / cameraWidth   // viewHeight / 640
         
-        // 旋转90度后需要调整缩放比例来填满视图
-        // 由于旋转了90度，宽高互换，需要计算合适的缩放比例
-        val scaleX = viewHeight.toFloat() / viewWidth.toFloat()
-        val scaleY = viewWidth.toFloat() / viewHeight.toFloat()
+        // 使用较小的缩放比例来保持长宽比，避免拉伸
+        val scale = minOf(scaleX, scaleY)
         
-        // 使用较大的缩放比例来确保填满整个视图
-        val scale = maxOf(scaleX, scaleY)
+        // 应用缩放
         matrix.postScale(scale, scale, centerX, centerY)
         
-        // 获取相机传感器方向用于日志
-        val characteristics = cameraCharacteristics
-        val sensorOrientation = characteristics?.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+        Log.d(TAG, "configureTransform: rotation=$rotation, scale=$scale, " +
+                "cameraSize=${cameraWidth}x${cameraHeight}, " +
+                "sensorOrientation=${cameraCharacteristics?.get(CameraCharacteristics.SENSOR_ORIENTATION)}, " +
+                "viewSize=${viewWidth}x${viewHeight}, scaleX=$scaleX, scaleY=$scaleY")
         
-        // 应用变换矩阵到TextureView
         textureView.setTransform(matrix)
-        Log.d(TAG, "Applied camera transform: rotation=${rotationDegrees}°, scale=${scale}, sensorOrientation=${sensorOrientation}°, viewSize=${viewWidth}x${viewHeight}")
     }
     
     private fun startBackgroundThread() {

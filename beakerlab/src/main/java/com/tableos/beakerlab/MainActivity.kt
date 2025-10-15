@@ -275,6 +275,10 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
         }
     }
     
+    // 保存调试图像的标志
+    private var shouldSaveDebugImage = false
+    private val imageLock = Object()
+    
     // CameraManager.FrameCallback implementation
     override fun onFrameAvailable(image: Image) {
         // Convert Image to Bitmap and process with shape detection
@@ -282,6 +286,15 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
             val bitmap = imageToBitmap(image)
             if (bitmap != null) {
                 processFrameForReactions(bitmap)
+                
+                // 检查是否需要保存调试图像
+                synchronized(imageLock) {
+                    if (shouldSaveDebugImage) {
+                        shouldSaveDebugImage = false
+                        Log.i(TAG, "从相机保存原始调试图片")
+                        saveDebugImageFromBitmap(bitmap)
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error processing camera frame", e)
@@ -290,42 +303,106 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
     
     private fun imageToBitmap(image: Image): Bitmap? {
         try {
+            // 添加详细的图像信息日志
+            Log.d(TAG, "图像格式: ${image.format}")
+            Log.d(TAG, "图像尺寸: ${image.width}x${image.height}")
+            Log.d(TAG, "图像平面数量: ${image.planes.size}")
+            
+            // 检查 Image 对象的有效性
+            if (image.planes.size < 3 || image.width <= 0 || image.height <= 0) {
+                Log.w(TAG, "无效的 Image 对象: planes=${image.planes.size}, size=${image.width}x${image.height}")
+                return null
+            }
+            
+            // 详细检查每个平面的信息
+            for (i in image.planes.indices) {
+                val plane = image.planes[i]
+                val buffer = plane.buffer
+                Log.d(TAG, "平面 $i: pixelStride=${plane.pixelStride}, rowStride=${plane.rowStride}, buffer.remaining()=${buffer.remaining()}")
+            }
+            
             // Convert YUV_420_888 Image to Bitmap
             val planes = image.planes
-            val yBuffer = planes[0].buffer
-            val uBuffer = planes[1].buffer
-            val vBuffer = planes[2].buffer
+            val yPlane = planes[0]
+            val uPlane = planes[1]
+            val vPlane = planes[2]
+            
+            val yBuffer = yPlane.buffer
+            val uBuffer = uPlane.buffer
+            val vBuffer = vPlane.buffer
 
             val ySize = yBuffer.remaining()
             val uSize = uBuffer.remaining()
             val vSize = vBuffer.remaining()
+            
+            // 检查缓冲区大小的合理性
+            val expectedYSize = image.width * image.height
+            val expectedUVSize = expectedYSize / 4
+            
+            // 特别检查Y平面是否为空
+            if (ySize == 0) {
+                Log.e(TAG, "Y平面缓冲区为空，这通常表示图像数据损坏或格式不正确")
+                Log.e(TAG, "图像格式: ${image.format}, 预期格式: ${ImageFormat.YUV_420_888}")
+                return null
+            }
+            
+            if (ySize < expectedYSize || uSize < expectedUVSize || vSize < expectedUVSize) {
+                Log.w(TAG, "缓冲区大小不匹配: ySize=$ySize, uSize=$uSize, vSize=$vSize, expected Y=$expectedYSize, expected UV=$expectedUVSize")
+                return null
+            }
 
-            val nv21 = ByteArray(ySize + uSize + vSize)
+            // 创建NV21格式的字节数组
+            val nv21Size = ySize + expectedUVSize * 2
+            val nv21 = ByteArray(nv21Size)
 
-            // Copy Y plane
+            // 复制Y平面
             yBuffer.get(nv21, 0, ySize)
 
-            // Copy UV planes (interleaved for NV21 format)
-            val uvPixelStride = planes[1].pixelStride
-            if (uvPixelStride == 1) {
-                // UV planes are already packed
-                uBuffer.get(nv21, ySize, uSize)
-                vBuffer.get(nv21, ySize + uSize, vSize)
-            } else {
-                // UV planes need to be interleaved
-                val uvBuffer = ByteArray(uSize)
-                val vvBuffer = ByteArray(vSize)
-                uBuffer.get(uvBuffer)
-                vBuffer.get(vvBuffer)
+            // 处理UV平面
+            val uPixelStride = uPlane.pixelStride
+            val vPixelStride = vPlane.pixelStride
+            val uRowStride = uPlane.rowStride
+            val vRowStride = vPlane.rowStride
+            
+            if (uPixelStride == 1 && vPixelStride == 1) {
+                // UV平面已经是连续的，直接复制并交错
+                val uBytes = ByteArray(uSize)
+                val vBytes = ByteArray(vSize)
+                uBuffer.get(uBytes)
+                vBuffer.get(vBytes)
                 
                 var uvIndex = ySize
-                for (i in 0 until uSize step uvPixelStride) {
-                    nv21[uvIndex++] = vvBuffer[i]
-                    nv21[uvIndex++] = uvBuffer[i]
+                val uvLength = minOf(uBytes.size, vBytes.size, expectedUVSize)
+                for (i in 0 until uvLength) {
+                    if (uvIndex + 1 < nv21.size) {
+                        nv21[uvIndex++] = vBytes[i]  // V comes first in NV21
+                        nv21[uvIndex++] = uBytes[i]  // U comes second
+                    }
+                }
+            } else {
+                // UV平面需要按行处理
+                val uvHeight = image.height / 2
+                val uvWidth = image.width / 2
+                var uvIndex = ySize
+                
+                for (row in 0 until uvHeight) {
+                    for (col in 0 until uvWidth) {
+                        if (uvIndex + 1 < nv21.size) {
+                            val uPos = row * uRowStride + col * uPixelStride
+                            val vPos = row * vRowStride + col * vPixelStride
+                            
+                            if (uPos < uSize && vPos < vSize) {
+                                nv21[uvIndex++] = vBuffer.get(vPos)  // V comes first in NV21
+                                nv21[uvIndex++] = uBuffer.get(uPos)  // U comes second
+                            } else {
+                                break
+                            }
+                        }
+                    }
                 }
             }
 
-            // Convert NV21 to RGB
+            // 转换NV21到RGB
             val yuvImage = android.graphics.YuvImage(nv21, android.graphics.ImageFormat.NV21, 
                 image.width, image.height, null)
             val out = java.io.ByteArrayOutputStream()
@@ -458,64 +535,149 @@ class MainActivity : AppCompatActivity(), CameraManager.FrameCallback, ChemicalR
             return
         }
         
-        // 获取当前摄像头帧
+        // 设置标志，在下一个相机帧中保存原始图像
+        synchronized(imageLock) {
+            shouldSaveDebugImage = true
+            Log.i(TAG, "已设置保存调试图像标志，等待下一个相机帧")
+        }
+        
+        Toast.makeText(this, "正在保存调试图片...", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun saveDebugImageFromBitmap(originalBitmap: Bitmap) {
         try {
-            val originalBitmap = cameraTextureView.getBitmap()
-            if (originalBitmap != null) {
-                Log.i(TAG, "获取到摄像头帧，开始应用旋转变换")
-                
-                // 手动应用逆时针90度旋转，与相机预览保持一致
-                val matrix = android.graphics.Matrix()
-                matrix.postRotate(-90f)
-                
-                val rotatedBitmap = Bitmap.createBitmap(
-                    originalBitmap, 
-                    0, 0, 
-                    originalBitmap.width, 
-                    originalBitmap.height, 
-                    matrix, 
-                    true
-                )
-                
-                Log.i(TAG, "图像旋转完成，原始尺寸: ${originalBitmap.width}x${originalBitmap.height}, 旋转后尺寸: ${rotatedBitmap.width}x${rotatedBitmap.height}")
-                
-                // 创建保存路径
-                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                val debugDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "BeakerLab_Debug")
-                
-                if (!debugDir.exists()) {
-                    debugDir.mkdirs()
+            Log.i(TAG, "获取到原始相机图像，开始分析和处理")
+            
+            // 打印原始相机图片信息和长宽比
+            val originalWidth = originalBitmap.width
+            val originalHeight = originalBitmap.height
+            val originalRatio = originalWidth.toFloat() / originalHeight.toFloat()
+            Log.i(TAG, "原始相机图片尺寸: ${originalWidth}x${originalHeight}, 长宽比: $originalRatio")
+            
+            // 获取TextureView的实际尺寸进行对比
+            val textureWidth = cameraTextureView.width
+            val textureHeight = cameraTextureView.height
+            val textureRatio = textureWidth.toFloat() / textureHeight.toFloat()
+            Log.i(TAG, "TextureView尺寸: ${textureWidth}x${textureHeight}, 长宽比: $textureRatio")
+            
+            // 智能判断是否需要旋转以获得4:3横向图像
+            val target43Ratio = 4.0f / 3.0f
+            val finalBitmap: Bitmap
+            
+            if (originalRatio > 1.0f) {
+                // 原始图像是横向的
+                if (kotlin.math.abs(originalRatio - target43Ratio) < 0.1f) {
+                    // 已经是4:3横向，不需要旋转
+                    Log.i(TAG, "原始图像已是4:3横向比例，无需旋转")
+                    finalBitmap = originalBitmap
+                } else {
+                    // 不是4:3比例，可能是16:9等，需要旋转
+                    Log.i(TAG, "原始图像是横向但非4:3比例，应用-90°旋转")
+                    val matrix = android.graphics.Matrix()
+                    matrix.postRotate(-90f)
+                    finalBitmap = Bitmap.createBitmap(
+                        originalBitmap, 0, 0, 
+                        originalBitmap.width, originalBitmap.height, 
+                        matrix, true
+                    )
+                }
+            } else {
+                // 原始图像是纵向的
+                val rotatedRatio = originalHeight.toFloat() / originalWidth.toFloat()
+                if (kotlin.math.abs(rotatedRatio - target43Ratio) < 0.1f) {
+                    // 旋转后会是4:3横向，需要旋转
+                    Log.i(TAG, "原始图像是纵向，旋转后可得4:3横向，应用90°旋转")
+                    val matrix = android.graphics.Matrix()
+                    matrix.postRotate(90f)
+                    finalBitmap = Bitmap.createBitmap(
+                        originalBitmap, 0, 0, 
+                        originalBitmap.width, originalBitmap.height, 
+                        matrix, true
+                    )
+                } else {
+                    // 旋转后也不是4:3，保持原样
+                    Log.i(TAG, "原始图像是纵向且旋转后也非4:3比例，保持原样")
+                    finalBitmap = originalBitmap
+                }
+            }
+            
+            // 打印最终图片信息和长宽比
+            val finalWidth = finalBitmap.width
+            val finalHeight = finalBitmap.height
+            val finalRatio = finalWidth.toFloat() / finalHeight.toFloat()
+            Log.i(TAG, "最终图片尺寸: ${finalWidth}x${finalHeight}, 长宽比: $finalRatio")
+            
+            // 创建保存路径
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val debugDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "BeakerLab_Debug")
+            
+            if (!debugDir.exists()) {
+                debugDir.mkdirs()
+            }
+            
+            val basePath = debugDir.absolutePath
+            val baseFileName = "beaker_debug_$timestamp"
+            
+            // 调用JNI方法保存最终的调试图片
+            val result = ShapeDetectorJNI.saveDebugImages(finalBitmap, basePath + "/" + baseFileName)
+            
+            if (result.isNotEmpty() && !result.contains("Error")) {
+                Log.i(TAG, "调试图片保存成功: $result")
+                Log.i(TAG, "保存的图片长宽比: $finalRatio (${finalWidth}x${finalHeight})")
+                runOnUiThread {
+                    Toast.makeText(this, "调试图片已保存到相册", Toast.LENGTH_SHORT).show()
                 }
                 
-                val basePath = debugDir.absolutePath
-                val baseFileName = "beaker_debug_$timestamp"
-                
-                // 调用JNI方法保存旋转后的调试图片
-                val result = ShapeDetectorJNI.saveDebugImages(rotatedBitmap, basePath + "/" + baseFileName)
-                
-                if (result.isNotEmpty() && !result.contains("Error")) {
-                    Log.i(TAG, "调试图片保存成功: $result")
-                    Toast.makeText(this, "调试图片已保存到相册", Toast.LENGTH_SHORT).show()
-                    
-                    // 如果是Android 10+，需要将文件添加到MediaStore
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        addImagesToMediaStore(baseFileName, timestamp)
-                    }
-                } else {
-                    Log.e(TAG, "调试图片保存失败: $result")
+                // 如果是Android 10+，需要将文件添加到MediaStore
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    addImagesToMediaStore(baseFileName, timestamp)
+                }
+            } else {
+                Log.e(TAG, "调试图片保存失败: $result")
+                runOnUiThread {
                     Toast.makeText(this, "调试图片保存失败: $result", Toast.LENGTH_SHORT).show()
                 }
-                
-                // 释放bitmap资源
-                originalBitmap.recycle()
-                rotatedBitmap.recycle()
-            } else {
-                Log.w(TAG, "无法获取摄像头帧")
-                Toast.makeText(this, "无法获取当前摄像头画面", Toast.LENGTH_SHORT).show()
+            }
+            
+            // 释放bitmap资源（如果创建了新的bitmap）
+            if (finalBitmap != originalBitmap) {
+                finalBitmap.recycle()
             }
         } catch (e: Exception) {
             Log.e(TAG, "保存调试图片时发生错误", e)
-            Toast.makeText(this, "保存调试图片时发生错误: ${e.message}", Toast.LENGTH_LONG).show()
+            runOnUiThread {
+                Toast.makeText(this, "保存调试图片时发生错误: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    
+    private fun saveDebugImageFromCamera(image: Image) {
+        Log.i(TAG, "从相机保存原始调试图片")
+        
+        try {
+            // 检查 Image 对象是否有效
+            if (image.planes.isEmpty() || image.width <= 0 || image.height <= 0) {
+                Log.w(TAG, "无效的 Image 对象，跳过保存")
+                return
+            }
+            
+            // 获取原始相机图像
+            val originalBitmap = imageToBitmap(image)
+            if (originalBitmap != null) {
+                saveDebugImageFromBitmap(originalBitmap)
+                // 释放bitmap资源
+                originalBitmap.recycle()
+            } else {
+                Log.w(TAG, "无法从相机获取原始图像")
+                runOnUiThread {
+                    Toast.makeText(this, "无法获取原始相机图像", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "保存调试图片时发生错误", e)
+            runOnUiThread {
+                Toast.makeText(this, "保存调试图片时发生错误: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
     
