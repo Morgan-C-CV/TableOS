@@ -87,11 +87,11 @@ Mat createColorMask(const Mat& image, const string& colorName) {
     Mat hsv, mask;
     cvtColor(image, hsv, COLOR_BGR2HSV);
     
-    // 定义颜色范围 (调整后的范围)
+    // 定义颜色范围 (调整后的范围，避免Green和Cyan混淆)
     map<string, pair<Scalar, Scalar>> colorRanges = {
         {"Yellow", {Scalar(10, 20, 60), Scalar(65, 255, 255)}},  // 扩大黄色范围
-        {"Green", {Scalar(40, 30, 60), Scalar(85, 255, 255)}},
-        {"Cyan", {Scalar(75, 40, 70), Scalar(115, 255, 255)}},
+        {"Green", {Scalar(40, 40, 60), Scalar(75, 255, 255)}},   // 绿色范围：40-75
+        {"Cyan", {Scalar(80, 50, 70), Scalar(115, 255, 255)}},   // 青色范围：80-115，避免与绿色重叠
         {"Blue", {Scalar(100, 40, 60), Scalar(140, 255, 255)}},
         {"Black", {Scalar(0, 0, 0), Scalar(180, 50, 40)}}       // 缩小黑色范围
     };
