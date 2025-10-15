@@ -26,19 +26,19 @@ std::map<std::string, ColorRange> getDefaultColorRanges() {
     // 色调范围: 10-65° (扩大范围，包含橙黄、纯黄、黄绿)
     // 饱和度: 20-255 (进一步降低要求，包含更浅的黄色)
     // 亮度: 60-255 (降低要求，包含更暗的黄色)
-    colorRanges["Yellow"] = ColorRange(cv::Scalar(20, 20, 100), cv::Scalar(55, 255, 255));
+    colorRanges["Yellow"] = ColorRange(cv::Scalar(30, 20, 120), cv::Scalar(55, 255, 255));
     
     // 绿色 - 扩展范围，包含黄绿到青绿色调
     // 色调范围: 40-85° (包含黄绿、纯绿、青绿)
     // 饱和度: 30-255 (降低要求，包含浅绿色)
     // 亮度: 60-255 (降低要求，包含暗绿色)
-    colorRanges["Green"] = ColorRange(cv::Scalar(40, 30, 60), cv::Scalar(85, 255, 255));
+    colorRanges["Green"] = ColorRange(cv::Scalar(40, 30, 60), cv::Scalar(95, 255, 255));
     
     // 青色 - 扩展范围，包含绿青到蓝青色调
     // 色调范围: 75-115° (包含绿青、纯青、蓝青)
     // 饱和度: 40-255 (降低要求，包含浅青色)
     // 亮度: 70-255 (降低要求，包含暗青色)
-    colorRanges["Cyan"] = ColorRange(cv::Scalar(90, 40, 160), cv::Scalar(105, 255, 255));
+    colorRanges["Cyan"] = ColorRange(cv::Scalar(100, 50, 180), cv::Scalar(120, 255, 255));
     
     // 蓝色 - 扩展范围，包含青蓝到紫蓝色调
     // 色调范围: 100-140° (包含青蓝、纯蓝、紫蓝)
@@ -173,100 +173,119 @@ bool isTriangle(const std::vector<cv::Point>& contour) {
 }
 
 bool isRectangle(const std::vector<cv::Point>& contour, double& aspectRatio) {
-    // 基于直线检测的矩形识别算法
+    // 基于四边形逼近的矩形识别算法
     
-    // 1. 基本面积过滤
+    // 1. 基本面积过滤 - 大幅提高最小面积阈值以过滤噪音
     double contourArea = cv::contourArea(contour);
-    if (contourArea < 50) {  // 面积太小
+    if (contourArea < 2000) {  // 从500进一步提高到2000，只检测较大的矩形
         return false;
     }
     
-    // 2. 创建轮廓的掩码图像用于直线检测
-    cv::Rect boundingRect = cv::boundingRect(contour);
-    cv::Mat mask = cv::Mat::zeros(boundingRect.height + 20, boundingRect.width + 20, CV_8UC1);
+    // 2. 使用四边形逼近轮廓 - 收紧epsilon以要求更精确的形状
+    std::vector<cv::Point> approx;
+    double epsilon = 0.015 * cv::arcLength(contour, true);  // 从0.02收紧到0.015
+    cv::approxPolyDP(contour, approx, epsilon, true);
     
-    // 将轮廓坐标转换为相对于边界矩形的坐标
-    std::vector<cv::Point> adjustedContour;
-    for (const auto& point : contour) {
-        adjustedContour.push_back(cv::Point(point.x - boundingRect.x + 10, point.y - boundingRect.y + 10));
-    }
-    
-    // 绘制轮廓到掩码
-    std::vector<std::vector<cv::Point>> contours = {adjustedContour};
-    cv::fillPoly(mask, contours, cv::Scalar(255));
-    
-    // 3. 边缘检测
-    cv::Mat edges;
-    cv::Canny(mask, edges, 50, 150);
-    
-    // 4. 霍夫直线变换检测直线
-    std::vector<cv::Vec4i> lines;
-    cv::HoughLinesP(edges, lines, 1, CV_PI/180, 30, 20, 10);
-    
-    if (lines.size() < 4) {  // 至少需要4条直线
-        return false;
-    }
-    
-    // 5. 分析直线长度和方向
-    std::vector<double> lengths;
-    std::vector<double> angles;
-    
-    for (const auto& line : lines) {
-        double length = sqrt(pow(line[2] - line[0], 2) + pow(line[3] - line[1], 2));
-        double angle = atan2(line[3] - line[1], line[2] - line[0]) * 180.0 / M_PI;
+    // 如果逼近结果不是四边形，尝试调整epsilon值（范围收紧）
+    if (approx.size() != 4) {
+        // 尝试稍大的epsilon值
+        epsilon = 0.025 * cv::arcLength(contour, true);  // 从0.08收紧到0.025
+        cv::approxPolyDP(contour, approx, epsilon, true);
         
-        // 将角度标准化到0-180度
-        if (angle < 0) angle += 180;
-        
-        lengths.push_back(length);
-        angles.push_back(angle);
-    }
-    
-    // 6. 按角度分组直线（水平和垂直方向）
-    std::vector<double> horizontalLengths, verticalLengths;
-    
-    for (size_t i = 0; i < angles.size(); i++) {
-        double angle = angles[i];
-        double length = lengths[i];
-        
-        // 水平线（角度接近0或180度）
-        if ((angle < 15 || angle > 165) || (angle > 75 && angle < 105)) {
-            if (angle < 15 || angle > 165) {
-                horizontalLengths.push_back(length);
-            } else {
-                verticalLengths.push_back(length);
-            }
+        // 如果仍然不是四边形，尝试更小的epsilon值
+        if (approx.size() != 4) {
+            epsilon = 0.008 * cv::arcLength(contour, true);  // 从0.01收紧到0.008
+            cv::approxPolyDP(contour, approx, epsilon, true);
         }
     }
     
-    // 7. 检查是否有两组显著的长边
-    if (horizontalLengths.size() < 2 || verticalLengths.size() < 2) {
+    // 如果最终仍然不是四边形，则不是矩形
+    if (approx.size() != 4) {
         return false;
     }
     
-    // 排序找到最长的边
-    std::sort(horizontalLengths.rbegin(), horizontalLengths.rend());
-    std::sort(verticalLengths.rbegin(), verticalLengths.rend());
-    
-    // 8. 检查每组中最长的两条边长度是否相近（矩形特性）
-    double hRatio = horizontalLengths[0] / horizontalLengths[1];
-    double vRatio = verticalLengths[0] / verticalLengths[1];
-    
-    if (hRatio > 2.0 || hRatio < 0.5 || vRatio > 2.0 || vRatio < 0.5) {
+    // 2.5. 检查四边形是否为凸多边形
+    if (!cv::isContourConvex(approx)) {
         return false;
     }
     
-    // 9. 检查两组边的长度比例（长宽比）
-    double avgHorizontal = (horizontalLengths[0] + horizontalLengths[1]) / 2.0;
-    double avgVertical = (verticalLengths[0] + verticalLengths[1]) / 2.0;
+    // 3. 计算四边形逼近的面积 - 大幅提高最小面积阈值
+    double approxArea = cv::contourArea(approx);
+    if (approxArea < 1800) {  // 从400进一步提高到1800
+        return false;
+    }
     
-    aspectRatio = std::max(avgHorizontal, avgVertical) / std::min(avgHorizontal, avgVertical);
+    // 4. 计算原始轮廓面积与四边形逼近面积的比值
+    double areaRatio = contourArea / approxArea;
     
-    // 10. 检查轮廓填充比例
-    double boundingArea = boundingRect.width * boundingRect.height;
-    double fillRatio = contourArea / boundingArea;
+    // 面积相似度检查 - 进一步收紧阈值以减少噪音
+    // 要求原始轮廓与四边形逼近的面积非常接近
+    if (areaRatio < 0.9 || areaRatio > 1.05) {  // 从0.8-1.1进一步收紧到0.9-1.05
+        return false;
+    }
     
-    if (fillRatio < 0.5 || fillRatio > 0.98) {
+    // 5. 检查四边形的几何特性
+    // 计算四个角的角度，确保接近90度
+    std::vector<double> angles;
+    for (int i = 0; i < 4; i++) {
+        cv::Point p1 = approx[i];
+        cv::Point p2 = approx[(i + 1) % 4];
+        cv::Point p3 = approx[(i + 2) % 4];
+        
+        cv::Point v1 = p1 - p2;
+        cv::Point v2 = p3 - p2;
+        
+        double dot = v1.x * v2.x + v1.y * v2.y;
+        double mag1 = std::sqrt(v1.x * v1.x + v1.y * v1.y);
+        double mag2 = std::sqrt(v2.x * v2.x + v2.y * v2.y);
+        
+        if (mag1 > 0 && mag2 > 0) {
+            double cosAngle = dot / (mag1 * mag2);
+            cosAngle = std::max(-1.0, std::min(1.0, cosAngle)); // 限制范围
+            double angle = std::acos(cosAngle) * 180.0 / M_PI;
+            angles.push_back(angle);
+        }
+    }
+    
+    // 6. 检查角度是否接近90度 - 进一步收紧角度容差
+    int rightAngles = 0;
+    for (double angle : angles) {
+        if (angle >= 85 && angle <= 95) { // 从80-100进一步收紧到85-95，只允许±5度的误差
+            rightAngles++;
+        }
+    }
+    
+    // 要求所有角都接近直角
+    if (rightAngles < 4) {  // 从3提高到4，要求所有角都是直角
+        return false;
+    }
+    
+    // 7. 检查对边长度是否相似
+    std::vector<double> sideLengths;
+    for (int i = 0; i < 4; i++) {
+        cv::Point p1 = approx[i];
+        cv::Point p2 = approx[(i + 1) % 4];
+        double length = std::sqrt(std::pow(p2.x - p1.x, 2) + std::pow(p2.y - p1.y, 2));
+        sideLengths.push_back(length);
+    }
+    
+    // 对边应该长度相似 - 进一步收紧相似度要求
+    bool oppositeSidesSimilar = 
+        (std::abs(sideLengths[0] - sideLengths[2]) / std::max(sideLengths[0], sideLengths[2]) < 0.1) &&  // 从0.2进一步收紧到0.1
+        (std::abs(sideLengths[1] - sideLengths[3]) / std::max(sideLengths[1], sideLengths[3]) < 0.1);   // 从0.2进一步收紧到0.1
+    
+    if (!oppositeSidesSimilar) {
+        return false;
+    }
+    
+    // 8. 计算长宽比
+    cv::Rect boundingRect = cv::boundingRect(approx);
+    aspectRatio = static_cast<double>(boundingRect.width) / boundingRect.height;
+    if (aspectRatio < 1.0) {
+        aspectRatio = 1.0 / aspectRatio;
+    }
+    
+    if (aspectRatio > 4.0) {  // 从5.0收紧到4.0，允许矩形但过滤极端长宽比
         return false;
     }
     
@@ -470,8 +489,8 @@ DetectionResult detectShapes(const cv::Mat& image, bool debug) {
         for (const auto& contour : contours) {
             double area = cv::contourArea(contour);
             
-            // 过滤太小的轮廓 - 大幅降低阈值以检测更小的形状
-            if (area < 50) {  // 大幅降低面积阈值以检测更小的形状
+            // 过滤太小的轮廓 - 与isRectangle函数保持一致的严格阈值
+            if (area < 2000) {  // 与isRectangle函数保持一致，只检测较大的形状
                 continue;
             }
             
@@ -499,8 +518,8 @@ DetectionResult detectShapes(const cv::Mat& image, bool debug) {
             // 计算置信度分数
             double confidence = calculateShapeConfidence(contour, shape.type);
             
-            // 过滤低置信度的检测结果 - 大幅降低阈值
-            if (confidence < 0.1) {  // 大幅降低置信度阈值
+            // 过滤低置信度的检测结果 - 提高阈值以减少噪音
+            if (confidence < 0.6) {  // 提高置信度阈值，只保留高质量检测结果
                 continue;
             }
             
@@ -553,41 +572,18 @@ cv::Mat annotateShapes(const cv::Mat& image, const std::vector<DetectedShape>& s
     shapeNames[ShapeType::RECTANGLE] = "Rectangle";
     
     for (const auto& shape : shapes) {
-        // 绘制轮廓 - 增强边框效果
+        // 绘制颜色
         cv::Scalar color = colorMap.count(shape.color) ? colorMap[shape.color] : cv::Scalar(128, 128, 128);
-        cv::drawContours(annotated, std::vector<std::vector<cv::Point>>{shape.contour}, -1, color, 3);
         
-        // 绘制边界矩形 - 增强边框
-        cv::rectangle(annotated, shape.boundingRect, cv::Scalar(0, 255, 0), 2);  // 绿色边界矩形
+        // 计算凸包
+        std::vector<cv::Point> hull;
+        cv::convexHull(shape.contour, hull);
+        
+        // 绘制凸包轮廓
+        cv::drawContours(annotated, std::vector<std::vector<cv::Point>>{hull}, -1, color, 3);
         
         // 绘制中心点
         cv::circle(annotated, shape.center, 3, color, -1);
-        
-        // 绘制方向线（对于长矩形和三角形）
-        if (shape.type == ShapeType::LONG_RECTANGLE || shape.type == ShapeType::TRIANGLE) {
-            cv::line(annotated, shape.directionLineStart, shape.directionLineEnd, 
-                    cv::Scalar(0, 255, 0), 3); // 绿色粗线
-            
-            // 在方向线端点绘制小圆圈
-            cv::circle(annotated, shape.directionLineStart, 2, cv::Scalar(0, 255, 0), -1);
-            cv::circle(annotated, shape.directionLineEnd, 2, cv::Scalar(0, 255, 0), -1);
-        }
-        
-        // 添加文本标签（包含ID和角度信息）
-        std::string label = shape.color + " " + shapeNames[shape.type];
-        label += " ID:" + std::to_string(shape.shapeId);
-        
-        if (shape.type == ShapeType::LONG_RECTANGLE || shape.type == ShapeType::TRIANGLE) {
-            label += " Angle:" + std::to_string((int)shape.orientationAngle) + "°";
-        }
-        
-        cv::Point textPos(shape.boundingRect.x, shape.boundingRect.y - 10);
-        cv::putText(annotated, label, textPos, cv::FONT_HERSHEY_SIMPLEX, 0.4, color, 1);
-        
-        // 添加面积信息
-        std::string areaText = "Area: " + std::to_string((int)shape.area);
-        cv::Point areaPos(shape.boundingRect.x, shape.boundingRect.y + shape.boundingRect.height + 15);
-        cv::putText(annotated, areaText, areaPos, cv::FONT_HERSHEY_SIMPLEX, 0.4, color, 1);
     }
     
     return annotated;

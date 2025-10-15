@@ -34,6 +34,54 @@ void freeImageData(ImageData& imageData) {
     }
 }
 
+// 计算两个向量之间的角度（度数）
+double calculateAngle(const Point& p1, const Point& p2, const Point& p3) {
+    // 向量 p2->p1 和 p2->p3
+    Point v1 = p1 - p2;
+    Point v2 = p3 - p2;
+    
+    // 计算点积和向量长度
+    double dot = v1.x * v2.x + v1.y * v2.y;
+    double len1 = sqrt(v1.x * v1.x + v1.y * v1.y);
+    double len2 = sqrt(v2.x * v2.x + v2.y * v2.y);
+    
+    if (len1 == 0 || len2 == 0) return 0;
+    
+    // 计算角度（弧度转度数）
+    double angle = acos(dot / (len1 * len2)) * 180.0 / CV_PI;
+    return angle;
+}
+
+// 验证凸包角度是否符合要求（70-120度和175度以上）
+bool isValidHullAngles(const vector<Point>& hull) {
+    if (hull.size() < 3) {
+        cout << "  凸包点数不足: " << hull.size() << endl;
+        return false;
+    }
+    
+    cout << "  检查凸包角度 (点数: " << hull.size() << "):" << endl;
+    bool isValid = true;
+    
+    for (int i = 0; i < hull.size(); i++) {
+        int prev = (i - 1 + hull.size()) % hull.size();
+        int next = (i + 1) % hull.size();
+        
+        double angle = calculateAngle(hull[prev], hull[i], hull[next]);
+        
+        // 检查角度是否在允许范围内：70-120度或175度以上
+        bool angleValid = ((angle >= 50 && angle <= 130) || angle >= 160);
+        
+        cout << "    点" << i << ": " << angle << "° " << (angleValid ? "✓" : "✗") << endl;
+        
+        if (!angleValid) {
+            isValid = false;
+        }
+    }
+    
+    cout << "  凸包角度验证结果: " << (isValid ? "通过" : "不通过") << endl;
+    return isValid;
+}
+
 // 创建颜色mask
 Mat createColorMask(const Mat& image, const string& colorName) {
     Mat hsv, mask;
@@ -106,54 +154,135 @@ int main() {
     }
     
     cout << "✓ 窗口创建成功" << endl;
-    cout << "\n4. 开始实时识别..." << endl;
+    cout << "\n4. 开始按帧分析..." << endl;
     cout << "控制说明:" << endl;
     cout << "  ESC - 退出程序" << endl;
-    cout << "  空格 - 暂停/继续" << endl;
+    cout << "  空格 - 下一帧" << endl;
     cout << "  's' - 保存当前帧" << endl;
     cout << "===================" << endl;
     
     Mat frame;
     int frameCount = 0;
-    bool paused = false;
+    bool frameReady = false;
+    
+    // 捕获第一帧
+    cap >> frame;
+    if (frame.empty()) {
+        cerr << "❌ 无法读取摄像头帧" << endl;
+        cap.release();
+        destroyAllWindows();
+        shape_detector_cleanup();
+        return -1;
+    }
+    frameCount++;
+    frameReady = true;
+    cout << "✓ 已捕获第一帧，按空格键进行下一帧分析" << endl;
     
     while (true) {
-        if (!paused) {
-            cap >> frame;
-            if (frame.empty()) {
-                cerr << "❌ 无法读取摄像头帧" << endl;
+        if (!frameReady) {
+            // 等待用户按键
+            char key = waitKey(0) & 0xFF;
+            if (key == 27) { // ESC键
+                cout << "\n用户按下ESC，退出程序..." << endl;
                 break;
+            } else if (key == ' ') { // 空格键 - 捕获下一帧
+                cap >> frame;
+                if (frame.empty()) {
+                    cerr << "❌ 无法读取摄像头帧" << endl;
+                    break;
+                }
+                frameCount++;
+                frameReady = true;
+                cout << "✓ 已捕获第 " << frameCount << " 帧" << endl;
+            } else if (key == 's' || key == 'S') { // 保存键
+                if (!frame.empty()) {
+                    string filename = "captured_frame_" + to_string(frameCount) + ".jpg";
+                    imwrite(filename, frame);
+                    cout << "💾 保存帧: " << filename << endl;
+                }
             }
-            frameCount++;
+            continue;
         }
         
-        // 显示原图
-        imshow("Original", frame);
+        // 创建带检测结果的原图副本
+        Mat annotatedFrame = frame.clone();
         
-        // 创建并显示各颜色mask
+        // 创建并显示各颜色mask，同时进行形状检测
         for (int i = 1; i < windowNames.size(); i++) {
             Mat mask = createColorMask(frame, colorNames[i]);
-            imshow(windowNames[i], mask);
+            
+            // 进行形状检测
+            ImageData imageData = matToImageData(mask);
+            DetectionResult* result = shape_detector_detect(&imageData, false);
+            
+            // 在mask上绘制检测结果
+            Mat maskWithDetection = mask.clone();
+            cvtColor(maskWithDetection, maskWithDetection, COLOR_GRAY2BGR);
+            
+            // 直接从mask中找到轮廓并绘制凸包
+            vector<vector<Point>> contours;
+            vector<Vec4i> hierarchy;
+            findContours(mask, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+            
+            // 设置颜色
+            Scalar color;
+            if (colorNames[i] == "Yellow") color = Scalar(0, 255, 255);
+            else if (colorNames[i] == "Green") color = Scalar(0, 255, 0);
+            else if (colorNames[i] == "Cyan") color = Scalar(255, 255, 0);
+            else if (colorNames[i] == "Blue") color = Scalar(255, 0, 0);
+            else if (colorNames[i] == "Black") color = Scalar(128, 128, 128);
+            
+            // 对每个轮廓计算并绘制凸包
+            cout << colorNames[i] << " 颜色检测到 " << contours.size() << " 个轮廓" << endl;
+            
+            int validHullCount = 0;
+            for (int j = 0; j < contours.size(); j++) {
+                const auto& contour = contours[j];
+                double area = contourArea(contour);
+                cout << "轮廓 " << j << ": 面积 = " << area;
+                
+                if (area > 900 && area <1500) {  // 过滤小轮廓
+                    cout << " (符合面积要求)" << endl;
+                    vector<Point> hull;
+                    convexHull(contour, hull);
+                    
+                    validHullCount++;
+                    cout << "  -> 绘制凸包 #" << validHullCount << endl;
+                    
+                    // 在mask上绘制凸包轮廓
+                    vector<vector<Point>> hullContours = {hull};
+                    drawContours(maskWithDetection, hullContours, -1, color, 3);
+                    
+                    // 计算并绘制中心点
+                    Moments m = moments(contour);
+                    if (m.m00 != 0) {
+                        Point center(m.m10 / m.m00, m.m01 / m.m00);
+                        circle(maskWithDetection, center, 3, color, -1);
+                    }
+                } else {
+                    cout << " (面积太小，跳过)" << endl;
+                }
+            }
+            
+            cout << colorNames[i] << " 最终绘制了 " << validHullCount << " 个有效凸包" << endl << endl;
+            
+            // 显示带检测结果的mask
+            imshow(windowNames[i], maskWithDetection);
+            
+            // 清理内存
+            freeImageData(imageData);
+            if (result) {
+                shape_detector_free_result(result);
+            }
         }
         
-        // 每30帧输出一次处理信息
-        if (frameCount % 30 == 0) {
-            cout << "已处理 " << frameCount << " 帧" << endl;
-        }
+        // 显示带注释的原图
+        imshow("Original", annotatedFrame);
         
-        // 处理键盘输入
-        char key = waitKey(1) & 0xFF;
-        if (key == 27) { // ESC键
-            cout << "\n用户按下ESC，退出程序..." << endl;
-            break;
-        } else if (key == ' ') { // 空格键
-            paused = !paused;
-            cout << (paused ? "⏸️ 暂停" : "▶️ 继续") << endl;
-        } else if (key == 's' || key == 'S') { // 保存键
-            string filename = "captured_frame_" + to_string(frameCount) + ".jpg";
-            imwrite(filename, frame);
-            cout << "💾 保存帧: " << filename << endl;
-        }
+        cout << "已处理第 " << frameCount << " 帧，按空格键继续下一帧，ESC退出" << endl;
+        
+        // 标记当前帧处理完成，等待下一次按键
+        frameReady = false;
     }
     
     // 清理资源
