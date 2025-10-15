@@ -93,7 +93,7 @@ class ChemicalReactionEngine {
         this.imageHeight = height.toFloat()
         // 根据图像尺寸调整反应距离阈值
         val diagonal = sqrt(width * width + height * height.toDouble()).toFloat()
-        this.reactionDistance = diagonal * 0.08f // 约为对角线长度的8%
+        this.reactionDistance = diagonal * 0.25f // 约为对角线长度的25%
         Log.d(TAG, "Image size set to ${width}x${height}, reaction distance: $reactionDistance")
     }
     
