@@ -45,8 +45,8 @@ class UpdateWebSocketServer(
         onClientConnected()
         onProgress("客户端已连接: ${conn.remoteSocketAddress}")
         
-        // Send welcome message
-        conn.send("CONNECTED:Super Update Server Ready")
+        // Send welcome message in JSON format
+        conn.send("{\"type\":\"connected\",\"message\":\"Super Update Server Ready\"}")
     }
 
     override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
@@ -107,7 +107,7 @@ class UpdateWebSocketServer(
             }
             else -> {
                 Log.d(TAG, "Unknown command: $message")
-                conn.send("$COMMAND_ERROR:Unknown command")
+                conn.send("{\"type\":\"error\",\"message\":\"Unknown command\"}")
             }
         }
     }
@@ -117,7 +117,7 @@ class UpdateWebSocketServer(
             // Format: FILE_INFO:filename:filesize
             val parts = message.split(":")
             if (parts.size != 3) {
-                conn.send("$COMMAND_ERROR:Invalid file info format")
+                conn.send("{\"type\":\"error\",\"message\":\"Invalid file info format\"}")
                 return
             }
             
@@ -125,7 +125,7 @@ class UpdateWebSocketServer(
             val fileSize = parts[2].toLong()
             
             if (!fileName.endsWith(".apk", ignoreCase = true)) {
-                conn.send("$COMMAND_ERROR:Only APK files are allowed")
+                conn.send("{\"type\":\"error\",\"message\":\"Only APK files are allowed\"}")
                 return
             }
             
@@ -141,11 +141,11 @@ class UpdateWebSocketServer(
             session.isReceivingFile = true
             
             onProgress("开始接收文件: $fileName (${formatFileSize(fileSize)})")
-            conn.send("READY_FOR_DATA")
+            conn.send("{\"type\":\"ready\",\"message\":\"Ready for data\"}")
             
         } catch (e: Exception) {
             Log.e(TAG, "Error handling file info", e)
-            conn.send("$COMMAND_ERROR:Failed to prepare for file transfer")
+            conn.send("{\"type\":\"error\",\"message\":\"Failed to prepare for file transfer\"}")
         }
     }
 
@@ -153,7 +153,7 @@ class UpdateWebSocketServer(
         val session = clientSessions[conn] ?: return
         
         if (!session.isReceivingFile) {
-            conn.send("$COMMAND_ERROR:Not expecting file data")
+            conn.send("{\"type\":\"error\",\"message\":\"Not expecting file data\"}")
             return
         }
         
@@ -167,15 +167,15 @@ class UpdateWebSocketServer(
             val progress = (session.receivedBytes * 100 / session.fileSize).toInt()
             onProgress("接收进度: ${formatFileSize(session.receivedBytes)}/${formatFileSize(session.fileSize)} ($progress%)")
             
-            // Send progress acknowledgment
-            conn.send("PROGRESS:$progress")
+            // Send progress acknowledgment in JSON format
+            conn.send("{\"type\":\"progress\",\"progress\":$progress,\"received\":${session.receivedBytes},\"total\":${session.fileSize}}")
             
         } catch (e: Exception) {
             Log.e(TAG, "Error writing file data", e)
             session.fileOutputStream?.close()
             session.tempFile?.delete()
             session.isReceivingFile = false
-            conn.send("$COMMAND_ERROR:Failed to write file data")
+            conn.send("{\"type\":\"error\",\"message\":\"Failed to write file data\"}")
         }
     }
 
@@ -189,15 +189,15 @@ class UpdateWebSocketServer(
                 if (session.receivedBytes == session.fileSize) {
                     onProgress("文件接收完成: ${session.fileName}")
                     onApkReceived(tempFile)
-                    conn.send("TRANSFER_SUCCESS")
+                    conn.send("{\"type\":\"success\",\"message\":\"Transfer completed successfully\"}")
                 } else {
                     onError("文件大小不匹配: 期望${session.fileSize}, 实际${session.receivedBytes}")
                     tempFile.delete()
-                    conn.send("$COMMAND_ERROR:File size mismatch")
+                    conn.send("{\"type\":\"error\",\"message\":\"File size mismatch\"}")
                 }
             } else {
                 onError("临时文件不存在")
-                conn.send("$COMMAND_ERROR:Temp file not found")
+                conn.send("{\"type\":\"error\",\"message\":\"Temp file not found\"}")
             }
             
             session.isReceivingFile = false
@@ -205,7 +205,7 @@ class UpdateWebSocketServer(
         } catch (e: Exception) {
             Log.e(TAG, "Error completing transfer", e)
             session.tempFile?.delete()
-            conn.send("$COMMAND_ERROR:Failed to complete transfer")
+            conn.send("{\"type\":\"error\",\"message\":\"Failed to complete transfer\"}")
         }
     }
 
@@ -218,8 +218,15 @@ class UpdateWebSocketServer(
     }
 
     fun broadcastMessage(message: String) {
+        // 确保消息是JSON格式
+        val jsonMessage = if (message.startsWith("{") && message.endsWith("}")) {
+            message
+        } else {
+            "{\"type\":\"broadcast\",\"message\":\"$message\"}"
+        }
+        
         connections.forEach { conn ->
-            conn.send(message)
+            conn.send(jsonMessage)
         }
     }
 

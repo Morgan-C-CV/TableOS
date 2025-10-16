@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Background circle -->
+    <path
+        android:fillColor="#6200EE"
+        android:pathData="M54,54m-50,0a50,50 0,1 1,100 0a50,50 0,1 1,-100 0"/>
+    
+    <!-- Update arrow icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30L54,45L42,45L54,60L66,45L54,45L54,30Z"/>
+    
+    <!-- Circle outline -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,72m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0"/>
+    
+    <!-- Text "U" for Update -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M46,72L46,78L50,78L50,80L58,80L58,78L62,78L62,72L60,72L60,76L58,76L58,74L50,74L50,76L48,76L48,72Z"/>
+</vector>

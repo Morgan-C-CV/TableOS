@@ -22,14 +22,21 @@ class SuperUpdateClient:
         self.chunk_size = 64 * 1024  # 64KB chunks
         
     async def connect(self) -> bool:
-        """连接到Android设备"""
+        """连接到WebSocket服务器"""
         try:
             uri = f"ws://{self.host}:{self.port}"
             print(f"正在连接到 {uri}...")
-            
             self.websocket = await websockets.connect(uri)
             print("✅ 连接成功!")
-            return True
+            
+            # 等待并处理服务器的连接响应
+            connected_response = await self.wait_for_response()
+            if connected_response and connected_response.get("type") == "connected":
+                await self._handle_response(connected_response)
+                return True
+            else:
+                print(f"❌ 未收到预期的连接响应: {connected_response}")
+                return False
             
         except Exception as e:
             print(f"❌ 连接失败: {e}")
@@ -55,16 +62,11 @@ class SuperUpdateClient:
         try:
             file_size = os.path.getsize(file_path)
             file_name = os.path.basename(file_path)
-            file_hash = self.calculate_file_hash(file_path)
             
-            file_info = {
-                "type": "file_info",
-                "name": file_name,
-                "size": file_size,
-                "hash": file_hash
-            }
+            # 服务器期望格式: FILE_INFO:filename:filesize
+            file_info_command = f"FILE_INFO:{file_name}:{file_size}"
             
-            await self.websocket.send(json.dumps(file_info))
+            await self.websocket.send(file_info_command)
             print(f"📄 文件信息已发送: {file_name} ({file_size} bytes)")
             return True
             
@@ -103,10 +105,8 @@ class SuperUpdateClient:
     async def send_transfer_complete(self) -> bool:
         """发送传输完成信号"""
         try:
-            complete_message = {
-                "type": "transfer_complete"
-            }
-            await self.websocket.send(json.dumps(complete_message))
+            # 服务器期望格式: TRANSFER_COMPLETE
+            await self.websocket.send("TRANSFER_COMPLETE")
             print("✅ 传输完成信号已发送")
             return True
             
@@ -133,6 +133,51 @@ class SuperUpdateClient:
             print(f"❌ 接收响应失败: {e}")
             return None
     
+    async def _handle_response(self, response: dict) -> bool:
+        """处理服务器响应的辅助方法"""
+        if not response:
+            return False
+            
+        response_type = response.get("type")
+        message = response.get("message", "")
+        
+        # 处理JSON响应
+        if response_type == "connected":
+            print(f"🔗 服务器连接成功: {message}")
+            return True
+        elif response_type == "ready":
+            print(f"✅ 服务器准备就绪: {message}")
+            return True
+        elif response_type == "progress":
+            progress = response.get("progress", 0)
+            received = response.get("received", 0)
+            total = response.get("total", 0)
+            print(f"📊 传输进度: {progress}% ({received}/{total} bytes)")
+            return True  # 进度消息不是最终响应，继续等待
+        elif response_type == "broadcast":
+            print(f"📢 服务器广播: {message}")
+            return True  # 广播消息不是最终响应，继续等待
+        elif response_type == "success":
+            print("🎉 APK上传并安装成功!")
+            return True
+        elif response_type == "error":
+            print(f"❌ 服务器错误: {message}")
+            return False
+        # 处理旧格式的文本响应（向后兼容）
+        elif response_type == "unknown":
+            if message == "TRANSFER_SUCCESS":
+                print("🎉 APK上传并安装成功!")
+                return True
+            elif message.startswith("ERROR:") or message.startswith("COMMAND_ERROR:"):
+                print(f"❌ 服务器错误: {message}")
+                return False
+            else:
+                print(f"⚠️ 未知响应: {message}")
+                return False
+        else:
+            print(f"⚠️ 未知响应类型: {response}")
+            return False
+    
     async def upload_apk(self, apk_path: str) -> bool:
         """上传APK文件"""
         if not os.path.exists(apk_path):
@@ -148,6 +193,13 @@ class SuperUpdateClient:
         if not await self.send_file_info(apk_path):
             return False
         
+        # 1.1. 等待服务器ready响应
+        ready_response = await self.wait_for_response()
+        if not ready_response or ready_response.get("type") != "ready":
+            print(f"❌ 服务器未准备好接收数据: {ready_response}")
+            return False
+        await self._handle_response(ready_response)
+        
         # 2. 发送文件数据
         if not await self.send_file_data(apk_path):
             return False
@@ -156,20 +208,22 @@ class SuperUpdateClient:
         if not await self.send_transfer_complete():
             return False
         
-        # 4. 等待服务器响应
-        response = await self.wait_for_response()
-        if response:
-            if response.get("type") == "success":
-                print("🎉 APK上传并安装成功!")
-                return True
-            elif response.get("type") == "error":
-                print(f"❌ 服务器错误: {response.get('message', '未知错误')}")
+        # 4. 等待服务器最终响应（可能有多个进度响应）
+        while True:
+            response = await self.wait_for_response()
+            if not response:
+                print("❌ 未收到服务器响应")
                 return False
-            else:
-                print(f"⚠️ 未知响应: {response}")
-                return False
-        
-        return False
+            
+            response_type = response.get("type")
+            
+            # 如果是进度响应，显示进度并继续等待
+            if response_type == "progress":
+                await self._handle_response(response)
+                continue
+            
+            # 如果是最终响应（成功或错误），处理并返回结果
+            return await self._handle_response(response)
 
 async def main():
     parser = argparse.ArgumentParser(description="Super Update Remote Client")
