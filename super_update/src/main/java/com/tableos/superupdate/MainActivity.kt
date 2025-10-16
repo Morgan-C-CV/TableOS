@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
+import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -74,6 +75,27 @@ class MainActivity : AppCompatActivity() {
                     val error = intent.getStringExtra("error_message") ?: "安装被阻止"
                     addLogMessage("🚫 安装被阻止: $error")
                 }
+                "com.tableos.superupdate.INSTALL_CONFLICT" -> {
+                    val error = intent.getStringExtra("error_message") ?: "安装冲突"
+                    addLogMessage("⚠️ 安装冲突: $error")
+                }
+                "com.tableos.superupdate.INSTALL_INCOMPATIBLE" -> {
+                    val error = intent.getStringExtra("error_message") ?: "应用不兼容"
+                    addLogMessage("❌ 应用不兼容: $error")
+                }
+                "com.tableos.superupdate.INSTALL_INVALID" -> {
+                    val error = intent.getStringExtra("error_message") ?: "无效的APK"
+                    addLogMessage("❌ 无效的APK: $error")
+                }
+                "com.tableos.superupdate.INSTALL_STORAGE_ERROR" -> {
+                    val error = intent.getStringExtra("error_message") ?: "存储错误"
+                    addLogMessage("❌ 存储错误: $error")
+                }
+                "com.tableos.superupdate.INSTALL_UNKNOWN" -> {
+                    val error = intent.getStringExtra("error_message") ?: "未知状态"
+                    val status = intent.getIntExtra("status", -1)
+                    addLogMessage("❓ 未知安装状态($status): $error")
+                }
             }
         }
     }
@@ -95,11 +117,18 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
+        
+        // 确保Activity能够接收按键事件
+        binding.root.isFocusable = true
+        binding.root.isFocusableInTouchMode = true
+        binding.root.requestFocus()
+        
         setupUI()
         checkPermissions()
         bindToService()
         registerInstallResultReceiver()
+        
+        Log.d(TAG, "MainActivity created and focus requested")
     }
 
     override fun onDestroy() {
@@ -109,6 +138,43 @@ class MainActivity : AppCompatActivity() {
             isServiceBound = false
         }
         unregisterReceiver(installResultReceiver)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent?): Boolean {
+        Log.d(TAG, "dispatchKeyEvent: action=${event?.action}, keyCode=${event?.keyCode}")
+        
+        // 只处理按键按下事件
+        if (event?.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                    Log.d(TAG, "Remote control key pressed: DPAD_CENTER or ENTER")
+                    addLogMessage("🎮 遥控器操作：切换服务状态")
+                    toggleService()
+                    return true
+                }
+            }
+        }
+        
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        Log.d(TAG, "onKeyDown: keyCode=$keyCode")
+        addLogMessage("🔑 按键事件: keyCode=$keyCode")
+        
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                // 遥控器确定键：开启/停止服务
+                Log.d(TAG, "Remote control key pressed: DPAD_CENTER or ENTER")
+                toggleService()
+                addLogMessage("🎮 遥控器操作：${if (updateService?.isRunning() == true) "停止" else "启动"}服务")
+                true
+            }
+            else -> {
+                Log.d(TAG, "Other key pressed: $keyCode")
+                super.onKeyDown(keyCode, event)
+            }
+        }
     }
 
     private fun setupUI() {
@@ -289,8 +355,17 @@ class MainActivity : AppCompatActivity() {
             addAction("com.tableos.superupdate.INSTALL_FAILURE")
             addAction("com.tableos.superupdate.INSTALL_ABORTED")
             addAction("com.tableos.superupdate.INSTALL_BLOCKED")
+            addAction("com.tableos.superupdate.INSTALL_CONFLICT")
+            addAction("com.tableos.superupdate.INSTALL_INCOMPATIBLE")
+            addAction("com.tableos.superupdate.INSTALL_INVALID")
+            addAction("com.tableos.superupdate.INSTALL_STORAGE_ERROR")
+            addAction("com.tableos.superupdate.INSTALL_UNKNOWN")
         }
-        registerReceiver(installResultReceiver, filter)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(installResultReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(installResultReceiver, filter)
+        }
     }
 
     override fun onRequestPermissionsResult(

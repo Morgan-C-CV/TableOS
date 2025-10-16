@@ -111,8 +111,12 @@ class UpdateService : Service() {
                 // Start server
                 webSocketServer?.start()
                 
-                // Set connection timeout to 5 minutes (300 seconds) to handle large file transfers
-                webSocketServer?.connectionLostTimeout = 300
+                // Set connection timeout to 10 minutes (600 seconds) to handle large file transfers
+                // This enables automatic ping/pong to keep connection alive
+                webSocketServer?.connectionLostTimeout = 600
+                
+                // Enable TCP no delay for better performance
+                webSocketServer?.setTcpNoDelay(true)
                 
                 isServiceRunning = true
                 
