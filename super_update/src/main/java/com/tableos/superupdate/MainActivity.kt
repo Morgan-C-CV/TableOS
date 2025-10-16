@@ -129,6 +129,9 @@ class MainActivity : AppCompatActivity() {
         bindToService()
         registerInstallResultReceiver()
         
+        // 启动时自动执行网络诊断
+        performStartupNetworkDiagnostics()
+        
         Log.d(TAG, "MainActivity created and focus requested")
     }
 
@@ -183,13 +186,16 @@ class MainActivity : AppCompatActivity() {
             toggleService()
         }
 
+        binding.btnNetworkDiagnostics.setOnClickListener {
+            performNetworkDiagnostics()
+        }
+
         // Display IP address
         val ipAddress = NetworkUtils.getLocalIpAddress(this)
         if (ipAddress != null) {
-            binding.tvIpAddress.text = ipAddress
-            updateConnectionInfo(ipAddress, 8080) // Default port, will be updated when service starts
+            updateConnectionInfo(ipAddress, null, 8080) // Default port, will be updated when service starts
         } else {
-            binding.tvIpAddress.text = "无法获取IP地址"
+            updateConnectionInfo(null, null, 8080)
             addLogMessage("⚠️ 无法获取本机IP地址，请检查网络连接")
         }
 
@@ -303,10 +309,9 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     updateServiceStatus(isRunning)
                     if (isRunning) {
-                        val ipAddress = NetworkUtils.getLocalIpAddress(this)
-                        if (ipAddress != null) {
-                            updateConnectionInfo(ipAddress, service.getCurrentPort())
-                        }
+                        val localIp = service.getLocalIpAddress()
+                        val publicIp = service.getPublicIpAddress()
+                        updateConnectionInfo(localIp, publicIp, service.getCurrentPort())
                     }
                 }
             }
@@ -362,20 +367,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateConnectionInfo(ipAddress: String, port: Int) {
-        binding.tvPort.text = port.toString()
-        binding.tvWebSocketUrl.text = getString(R.string.websocket_url, ipAddress, port)
-        binding.tvTcpUrl.text = getString(R.string.tcp_url, ipAddress, port)
+    private fun updateConnectionInfo(localIp: String?, publicIp: String?, port: Int) {
+        // 构建简化的网络地址显示文本
+        val localText = if (localIp != null) "$localIp:$port" else "获取失败"
+        val publicText = if (publicIp != null) "$publicIp:$port" else "获取中..."
+        
+        val networkAddresses = "局域网: $localText | 公网: $publicText"
+        binding.tvNetworkAddresses.text = networkAddresses
+        
+        // 记录日志
+        if (publicIp != null) {
+            addLogMessage("✅ 公网IP获取成功: $publicIp")
+        } else if (localIp == null) {
+            addLogMessage("⚠️ 无法获取本机IP地址，请检查网络连接")
+        }
     }
 
     private fun updateUI() {
         updateService?.let { service ->
             updateServiceStatus(service.isRunning())
             if (service.isRunning()) {
-                val ipAddress = NetworkUtils.getLocalIpAddress(this)
-                if (ipAddress != null) {
-                    updateConnectionInfo(ipAddress, service.getCurrentPort())
-                }
+                val localIp = service.getLocalIpAddress()
+                val publicIp = service.getPublicIpAddress()
+                updateConnectionInfo(localIp, publicIp, service.getCurrentPort())
             }
         }
     }
@@ -398,6 +412,40 @@ class MainActivity : AppCompatActivity() {
             binding.tvActivityLog.post {
                 val scrollView = binding.tvActivityLog.parent as? android.widget.ScrollView
                 scrollView?.fullScroll(android.view.View.FOCUS_DOWN)
+            }
+        }
+    }
+
+    private fun performNetworkDiagnostics() {
+        addLogMessage("🔍 开始网络诊断...")
+        
+        lifecycleScope.launch {
+            try {
+                // 执行网络诊断
+                val diagnosticsResult = NetworkUtils.performNetworkDiagnostics(this@MainActivity)
+                
+                // 将诊断结果分行显示在日志中
+                val lines = diagnosticsResult.split("\n")
+                for (line in lines) {
+                    if (line.isNotBlank()) {
+                        addLogMessage("📊 $line")
+                    }
+                }
+                
+                // 尝试获取公网IP
+                addLogMessage("🌐 尝试获取公网IP地址...")
+                val publicIp = NetworkUtils.getPublicIpAddress()
+                if (publicIp != null) {
+                    addLogMessage("✅ 公网IP获取成功: $publicIp")
+                } else {
+                    addLogMessage("❌ 公网IP获取失败")
+                }
+                
+                addLogMessage("🔍 网络诊断完成")
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "网络诊断失败", e)
+                addLogMessage("❌ 网络诊断失败: ${e.message}")
             }
         }
     }
@@ -447,6 +495,36 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     addLogMessage("❌ 存储权限被拒绝")
                 }
+            }
+        }
+    }
+
+    /**
+     * 启动时自动执行网络诊断
+     */
+    private fun performStartupNetworkDiagnostics() {
+        addLogMessage("🔍 启动时自动执行网络诊断...")
+        
+        lifecycleScope.launch {
+            try {
+                // 获取局域网IP
+                val localIp = NetworkUtils.getLocalIpAddress(this@MainActivity)
+                
+                // 获取公网IP
+                val publicIp = NetworkUtils.getPublicIpAddress()
+                
+                if (!publicIp.isNullOrEmpty()) {
+                    // 成功获取公网IP，立即更新UI
+                    updateConnectionInfo(localIp, publicIp, 0)
+                    addLogMessage("✅ 启动诊断成功 - 局域网: $localIp, 公网: $publicIp")
+                    Log.i(TAG, "✅ 启动时成功获取公网IP: $publicIp")
+                } else {
+                    updateConnectionInfo(localIp, "获取失败", 0)
+                    addLogMessage("⚠️ 启动诊断 - 局域网: $localIp, 公网IP获取失败")
+                }
+            } catch (e: Exception) {
+                addLogMessage("❌ 启动诊断异常: ${e.message}")
+                Log.e(TAG, "启动时网络诊断异常", e)
             }
         }
     }

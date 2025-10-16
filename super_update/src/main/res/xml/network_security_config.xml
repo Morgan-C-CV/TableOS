@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 基础配置：禁用HTTP明文传输，只允许HTTPS -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+    
+    <!-- 为公网IP获取服务配置HTTPS连接 -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">checkip.amazonaws.com</domain>
+        <domain includeSubdomains="true">httpbin.org</domain>
+        <domain includeSubdomains="true">ipinfo.io</domain>
+        <domain includeSubdomains="true">icanhazip.com</domain>
+        <domain includeSubdomains="true">api.ipify.org</domain>
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </domain-config>
+    
+    <!-- 调试配置（仅在调试版本中生效） -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>

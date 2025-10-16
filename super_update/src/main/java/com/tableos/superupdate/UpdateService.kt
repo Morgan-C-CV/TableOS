@@ -16,6 +16,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import java.util.Timer
+import java.util.TimerTask
 import java.io.File
 import java.io.FileInputStream
 import java.net.InetSocketAddress
@@ -39,6 +42,12 @@ class UpdateService : Service() {
     
     private var currentPort = DEFAULT_PORT
     private var isServiceRunning = false
+    private var localIpAddress: String? = null
+    private var publicIpAddress: String? = null
+    
+    // 定期获取公网IP的定时器
+    private var publicIpTimer: Timer? = null
+    private var publicIpRetryJob: Job? = null
     
     // Callbacks for UI updates
     private var onServiceStateChanged: ((Boolean) -> Unit)? = null
@@ -96,6 +105,71 @@ class UpdateService : Service() {
                 // Find available port
                 currentPort = NetworkUtils.findAvailablePort(DEFAULT_PORT)
                 
+                // Perform comprehensive network diagnostics
+                Log.i(TAG, "🚀 开始启动更新服务...")
+                val networkDiagnostics = NetworkUtils.performNetworkDiagnostics(this@UpdateService)
+                onProgress?.invoke("📊 网络诊断完成")
+                
+                // Check basic network availability
+                val isNetworkAvailable = NetworkUtils.isNetworkAvailable(this@UpdateService)
+                val isWifiConnected = NetworkUtils.isWifiConnected(this@UpdateService)
+                val networkType = NetworkUtils.getNetworkType(this@UpdateService)
+                
+                if (!isNetworkAvailable) {
+                    Log.e(TAG, "❌ 网络不可用，无法启动服务")
+                    onProgress?.invoke("❌ 网络不可用，无法启动服务")
+                    onError?.invoke("网络连接不可用")
+                    return@launch
+                }
+                
+                // Get local IP address
+                Log.d(TAG, "🏠 获取本地IP地址...")
+                localIpAddress = NetworkUtils.getLocalIpAddress(this@UpdateService)
+                Log.i(TAG, "🏠 本地IP地址: ${localIpAddress ?: "未获取到"}")
+                
+                // Get public IP address
+                Log.i(TAG, "🌐 开始获取公网IP地址...")
+                onProgress?.invoke("🌐 正在获取公网IP地址...")
+                
+                val startTime = System.currentTimeMillis()
+                try {
+                    Log.d(TAG, "⏱️ 公网IP获取开始时间: ${System.currentTimeMillis()}")
+                    publicIpAddress = NetworkUtils.getPublicIpAddress()
+                    val endTime = System.currentTimeMillis()
+                    val duration = endTime - startTime
+                    
+                    if (publicIpAddress != null) {
+                        Log.i(TAG, "✅ 公网IP获取成功: $publicIpAddress (耗时: ${duration}ms)")
+                        onProgress?.invoke("✅ 公网IP获取成功: $publicIpAddress")
+                        // 触发UI更新以显示公网IP
+                        onServiceStateChanged?.invoke(true)
+                    } else {
+                        Log.w(TAG, "⚠️ 公网IP获取失败，返回null (耗时: ${duration}ms)")
+                        Log.w(TAG, "🔍 可能的原因:")
+                        Log.w(TAG, "   1. 设备只能访问局域网")
+                        Log.w(TAG, "   2. 防火墙阻止了HTTPS请求")
+                        Log.w(TAG, "   3. 网络安全配置过于严格")
+                        Log.w(TAG, "   4. DNS解析失败")
+                        Log.w(TAG, "   5. 代理或VPN配置问题")
+                        onProgress?.invoke("⚠️ 公网IP获取失败，仅支持局域网连接")
+                        // 即使获取失败也触发UI更新
+                        onServiceStateChanged?.invoke(true)
+                        // 启动定期重试获取公网IP
+                        startPublicIpRetry()
+                    }
+                } catch (e: Exception) {
+                    val endTime = System.currentTimeMillis()
+                    val duration = endTime - startTime
+                    Log.e(TAG, "❌ 公网IP获取异常 (耗时: ${duration}ms): ${e.javaClass.simpleName}: ${e.message}")
+                    Log.e(TAG, "📋 异常堆栈:", e)
+                    publicIpAddress = null
+                    onProgress?.invoke("❌ 公网IP获取失败: ${e.message}")
+                    // 异常情况下也触发UI更新
+                    onServiceStateChanged?.invoke(true)
+                    // 启动定期重试获取公网IP
+                    startPublicIpRetry()
+                }
+                
                 // Create WebSocket server
                 val address = InetSocketAddress(currentPort)
                 webSocketServer = UpdateWebSocketServer(
@@ -133,7 +207,19 @@ class UpdateService : Service() {
                 startForeground(NOTIFICATION_ID, createNotification())
                 
                 onServiceStateChanged?.invoke(true)
-                onProgress?.invoke("服务已启动，端口: $currentPort")
+                
+                // Build connection info message
+                val connectionInfo = buildString {
+                    append("服务已启动，端口: $currentPort\n")
+                    localIpAddress?.let { 
+                        append("局域网地址: ws://$it:$currentPort\n")
+                    }
+                    publicIpAddress?.let { 
+                        append("公网地址: ws://$it:$currentPort")
+                    } ?: append("公网地址: 获取失败")
+                }
+                
+                onProgress?.invoke(connectionInfo)
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start service", e)
@@ -155,6 +241,10 @@ class UpdateService : Service() {
             webSocketServer = null
             serviceJob?.cancel()
             serviceJob = null
+            
+            // 停止定期获取公网IP的定时器
+            stopPublicIpRetry()
+            
             isServiceRunning = false
             
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -275,5 +365,71 @@ class UpdateService : Service() {
 
     fun setOnError(callback: (String) -> Unit) {
         onError = callback
+    }
+    
+    fun getLocalIpAddress(): String? = localIpAddress
+    
+    fun getPublicIpAddress(): String? = publicIpAddress
+    
+    fun getConnectionInfo(): String {
+        return buildString {
+            append("端口: $currentPort\n")
+            localIpAddress?.let { 
+                append("局域网地址: ws://$it:$currentPort\n")
+            }
+            publicIpAddress?.let { 
+                append("公网地址: ws://$it:$currentPort")
+            } ?: append("公网地址: 获取失败")
+        }
+    }
+    
+    /**
+     * 开始定期获取公网IP
+     * 当没有公网IP时，每5秒重试一次
+     */
+    private fun startPublicIpRetry() {
+        // 如果已经有公网IP，则不需要重试
+        if (publicIpAddress != null) {
+            Log.d(TAG, "已有公网IP，无需重试")
+            return
+        }
+        
+        // 停止之前的定时器
+        stopPublicIpRetry()
+        
+        Log.d(TAG, "开始定期获取公网IP，每5秒重试一次")
+        
+        publicIpRetryJob = serviceScope.launch {
+            while (isServiceRunning && publicIpAddress == null) {
+                try {
+                    Log.d(TAG, "重试获取公网IP...")
+                    val publicIp = NetworkUtils.getPublicIpAddress()
+                    if (publicIp != null) {
+                        publicIpAddress = publicIp
+                        Log.d(TAG, "✅ 重试获取公网IP成功: $publicIp")
+                        onServiceStateChanged?.invoke(true) // 触发UI更新
+                        break // 获取成功，退出循环
+                    } else {
+                        Log.d(TAG, "⚠️ 重试获取公网IP失败，5秒后再次尝试")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "重试获取公网IP异常: ${e.message}", e)
+                }
+                
+                // 等待5秒后再次尝试
+                delay(5000)
+            }
+        }
+    }
+    
+    /**
+     * 停止定期获取公网IP
+     */
+    private fun stopPublicIpRetry() {
+        publicIpTimer?.cancel()
+        publicIpTimer = null
+        publicIpRetryJob?.cancel()
+        publicIpRetryJob = null
+        Log.d(TAG, "已停止定期获取公网IP")
     }
 }
