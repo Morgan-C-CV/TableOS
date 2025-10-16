@@ -25,7 +25,6 @@ class VideoInputTestFragment : Fragment() {
     private var previewRequestBuilder: CaptureRequest.Builder? = null
     private var previewWidth: Int = 0
     private var previewHeight: Int = 0
-    private var appliedRotation: Int = 0
 
     private val REQUEST_CAMERA = 1001
 
@@ -125,6 +124,20 @@ class VideoInputTestFragment : Fragment() {
             ) {
                 return
             }
+            
+            // 获取相机特性和支持的分辨率
+            val characteristics = manager.getCameraCharacteristics(cameraId)
+            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            
+            // 选择最佳分辨率用于图像处理
+            val sizes = map?.getOutputSizes(android.graphics.ImageFormat.YUV_420_888)
+            val chosenSize = chooseOptimalSize(sizes)
+            
+            // 保存选择的分辨率
+            previewWidth = chosenSize.width
+            previewHeight = chosenSize.height
+            
+            android.util.Log.d("VideoInputTest", "Chosen camera resolution: ${chosenSize.width}x${chosenSize.height}")
 
             manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(device: CameraDevice) {
@@ -147,24 +160,35 @@ class VideoInputTestFragment : Fragment() {
     private fun createPreviewSession() {
         val device = cameraDevice ?: return
         val surfaceTexture = textureView.surfaceTexture ?: return
-        // 选择较小、常见的预览尺寸，避免比例失真与高分辨率卡顿
-        val (w, h) = choosePreviewSize(device) ?: Pair(640, 480)
-        previewWidth = w
-        previewHeight = h
-        // 计算需要应用到 TextureView 的旋转角度
-        runCatching {
-            val manager = requireContext().getSystemService(CameraManager::class.java)
-            val characteristics = manager.getCameraCharacteristics(device.id)
-            appliedRotation = computeTotalRotation(characteristics)
-        }.onFailure { appliedRotation = 0 }
-        surfaceTexture.setDefaultBufferSize(previewWidth, previewHeight)
+        // 使用与beakerlab相同的固定尺寸640x480用于TextureView显示
+        // 但实际相机分辨率使用动态选择的previewWidth和previewHeight
+        surfaceTexture.setDefaultBufferSize(640, 480)
         val previewSurface = Surface(surfaceTexture)
 
         try {
             previewRequestBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                 addTarget(previewSurface)
+                
+                // Set auto focus
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                
+                // 自动曝光设置 - 增加曝光补偿
                 set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                set(CaptureRequest.CONTROL_AE_LOCK, false)
+                
+                // 曝光补偿设置 - 增加曝光，提高亮度
+                set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, 4)
+                
+                // ISO设置 - 提高ISO增加感光度
+                set(CaptureRequest.SENSOR_SENSITIVITY, 600)
+                
+                // 白平衡设置 - 使用自动白平衡
+                set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
+                set(CaptureRequest.CONTROL_AWB_LOCK, false)
+                
+                // 场景模式设置为自动
+                set(CaptureRequest.CONTROL_SCENE_MODE, CaptureRequest.CONTROL_SCENE_MODE_DISABLED)
+                set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
             }
 
             device.createCaptureSession(listOf(previewSurface), object : CameraCaptureSession.StateCallback() {
@@ -218,49 +242,104 @@ class VideoInputTestFragment : Fragment() {
         val ch = chosen ?: sizes.minByOrNull { it.width * it.height } ?: return null
         return Pair(ch.width, ch.height)
     }
-
-    private fun computeTotalRotation(characteristics: CameraCharacteristics): Int {
-        val sensor = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
-        val facing = characteristics.get(CameraCharacteristics.LENS_FACING) ?: CameraCharacteristics.LENS_FACING_BACK
-        val displayRotEnum = requireActivity().display?.rotation ?: Surface.ROTATION_0
-        val display = when (displayRotEnum) {
-            Surface.ROTATION_0 -> 0
-            Surface.ROTATION_90 -> 90
-            Surface.ROTATION_180 -> 180
-            Surface.ROTATION_270 -> 270
-            else -> 0
+    
+    private fun chooseOptimalSize(choices: Array<android.util.Size>?): android.util.Size {
+        if (choices == null) return android.util.Size(1280, 960)
+        
+        // 优先选择4:3比例的分辨率，以匹配4:3横屏显示
+        val preferred43Sizes = listOf(
+            android.util.Size(1600, 1200),  // UXGA 4:3
+            android.util.Size(1280, 960),   // SXGA 4:3
+            android.util.Size(1024, 768),   // XGA 4:3
+            android.util.Size(800, 600),    // SVGA 4:3
+            android.util.Size(640, 480)     // VGA 4:3 (fallback)
+        )
+        
+        // 备选16:9分辨率（如果没有4:3可用）
+        val fallback169Sizes = listOf(
+            android.util.Size(1920, 1080),  // Full HD 16:9
+            android.util.Size(1280, 720),   // HD 16:9
+            android.util.Size(960, 540)     // qHD 16:9
+        )
+        
+        // 首先查找4:3比例的分辨率
+        for (preferred in preferred43Sizes) {
+            val match = choices.find { 
+                it.width == preferred.width && it.height == preferred.height 
+            }
+            if (match != null) {
+                android.util.Log.d("VideoInputTest", "Selected 4:3 camera resolution: ${match.width}x${match.height}")
+                return match
+            }
         }
-        return if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
-            (sensor + display) % 360
-        } else {
-            (sensor - display + 360) % 360
+        
+        // 如果没有找到4:3分辨率，使用16:9作为备选
+        for (preferred in fallback169Sizes) {
+            val match = choices.find { 
+                it.width == preferred.width && it.height == preferred.height 
+            }
+            if (match != null) {
+                android.util.Log.d("VideoInputTest", "Selected 16:9 camera resolution (fallback): ${match.width}x${match.height}")
+                return match
+            }
         }
+        
+        // 最后的备选方案：选择最接近4:3比例的分辨率
+        val target43Ratio = 4.0f / 3.0f
+        val best43Match = choices.minByOrNull { size ->
+            val ratio = size.width.toFloat() / size.height.toFloat()
+            kotlin.math.abs(ratio - target43Ratio)
+        }
+        
+        if (best43Match != null) {
+            android.util.Log.d("VideoInputTest", "Selected closest to 4:3 ratio: ${best43Match.width}x${best43Match.height}")
+            return best43Match
+        }
+        
+        return choices.firstOrNull() ?: android.util.Size(1280, 960)
     }
 
+
+
     private fun configureTransform(viewWidth: Int, viewHeight: Int) {
-        if (previewWidth == 0 || previewHeight == 0) return
-        val rotation = appliedRotation
+        if (viewWidth == 0 || viewHeight == 0) return
+        
         val matrix = android.graphics.Matrix()
-        val viewRect = android.graphics.RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        val bufferRect = if (rotation == 90 || rotation == 270) {
-            android.graphics.RectF(0f, 0f, previewHeight.toFloat(), previewWidth.toFloat())
-        } else {
-            android.graphics.RectF(0f, 0f, previewWidth.toFloat(), previewHeight.toFloat())
+        val rotation = -90f // 设置为-90度来抵消90度顺时针旋转
+        
+        // 使用实际的相机预览尺寸，而不是TextureView的缓冲区尺寸
+        val cameraWidth = previewWidth.toFloat()
+        val cameraHeight = previewHeight.toFloat()
+        
+        // 如果相机尺寸还没有设置，使用默认值
+        if (cameraWidth == 0f || cameraHeight == 0f) {
+            android.util.Log.w("VideoInputTest", "Camera size not set, using default 640x480")
+            return
         }
-        val centerX = viewRect.centerX()
-        val centerY = viewRect.centerY()
-        if (rotation == 90 || rotation == 270) {
-            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
-            matrix.setRectToRect(viewRect, bufferRect, android.graphics.Matrix.ScaleToFit.FILL)
-            val scale = kotlin.math.max(
-                viewHeight.toFloat() / previewHeight.toFloat(),
-                viewWidth.toFloat() / previewWidth.toFloat()
-            )
-            matrix.postScale(scale, scale, centerX, centerY)
-            matrix.postRotate(rotation.toFloat(), centerX, centerY)
-        } else if (rotation == 180) {
-            matrix.postRotate(180f, centerX, centerY)
-        }
+        
+        // 计算中心点
+        val centerX = viewWidth / 2f
+        val centerY = viewHeight / 2f
+        
+        // 先旋转，再缩放
+        matrix.postRotate(rotation, centerX, centerY)
+        
+        // -90度旋转后，原来的宽度变成高度，高度变成宽度
+        // 所以我们需要将view的宽度与camera的高度比较，view的高度与camera的宽度比较
+        val scaleX = viewWidth.toFloat() / cameraHeight   // viewWidth / cameraHeight (旋转后camera高度对应view宽度)
+        val scaleY = viewHeight.toFloat() / cameraWidth   // viewHeight / cameraWidth (旋转后camera宽度对应view高度)
+        
+        // 使用较大的缩放比例来填满整个视图（CENTER_CROP效果），避免白边
+        val scale = kotlin.math.max(scaleX, scaleY)
+        
+        // 应用缩放
+        matrix.postScale(scale, scale, centerX, centerY)
+        
+        android.util.Log.d("VideoInputTest", "configureTransform: rotation=$rotation, scale=$scale, " +
+                "cameraSize=${cameraWidth}x${cameraHeight}, " +
+                "actualCameraSize=${previewWidth}x${previewHeight}, " +
+                "viewSize=${viewWidth}x${viewHeight}, scaleX=$scaleX, scaleY=$scaleY")
+        
         textureView.setTransform(matrix)
     }
 

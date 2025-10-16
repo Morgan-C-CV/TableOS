@@ -203,7 +203,8 @@ class PerspectiveTestFragment : Fragment() {
     private fun createCameraPreviewSession() {
         try {
             val texture = textureView.surfaceTexture!!
-            texture.setDefaultBufferSize(previewSize!!.width, previewSize!!.height)
+            // 使用与beakerlab相同的固定尺寸640x480
+            texture.setDefaultBufferSize(640, 480)
 
             val surface = Surface(texture)
             val previewRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
@@ -217,13 +218,48 @@ class PerspectiveTestFragment : Fragment() {
 
                         captureSession = session
                         try {
+                            // 自动对焦设置
                             previewRequestBuilder.set(
                                 CaptureRequest.CONTROL_AF_MODE,
                                 CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
                             )
+                            
+                            // 自动曝光设置 - 增加曝光补偿
                             previewRequestBuilder.set(
                                 CaptureRequest.CONTROL_AE_MODE,
-                                CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH
+                                CaptureRequest.CONTROL_AE_MODE_ON
+                            )
+                            previewRequestBuilder.set(
+                                CaptureRequest.CONTROL_AE_LOCK,
+                                false
+                            )
+                            
+                            // 曝光补偿设置 - 增加曝光，提高亮度
+                            previewRequestBuilder.set(
+                                CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,
+                                4
+                            )
+                            
+                            // ISO设置 - 提高ISO增加感光度
+                            previewRequestBuilder.set(
+                                CaptureRequest.SENSOR_SENSITIVITY,
+                                600
+                            )
+                            
+                            // 白平衡设置 - 使用自动白平衡
+                            previewRequestBuilder.set(
+                                CaptureRequest.CONTROL_AWB_MODE,
+                                CaptureRequest.CONTROL_AWB_MODE_AUTO
+                            )
+                            previewRequestBuilder.set(
+                                CaptureRequest.CONTROL_AWB_LOCK,
+                                false
+                            )
+                            
+                            // 场景模式设置 - 使用自动模式
+                            previewRequestBuilder.set(
+                                CaptureRequest.CONTROL_SCENE_MODE,
+                                CaptureRequest.CONTROL_SCENE_MODE_DISABLED
                             )
 
                             val previewRequest = previewRequestBuilder.build()
@@ -390,48 +426,78 @@ class PerspectiveTestFragment : Fragment() {
         textureViewHeight: Int,
         maxSize: Size
     ): Size {
-        val bigEnough = mutableListOf<Size>()
-        val notBigEnough = mutableListOf<Size>()
-        val w = maxSize.width
-        val h = maxSize.height
+        // 与beakerlab模块保持一致的分辨率选择逻辑
+        // 优先选择4:3比例的分辨率
+        val ratio43 = 4.0 / 3.0
+        val ratio169 = 16.0 / 9.0
+        val tolerance = 0.1
         
-        for (option in choices) {
-            if (option.width <= w && option.height <= h) {
-                if (option.width >= textureViewWidth && option.height >= textureViewHeight) {
-                    bigEnough.add(option)
-                } else {
-                    notBigEnough.add(option)
-                }
-            }
+        // 首先尝试找到4:3比例的分辨率
+        val ratio43Sizes = choices.filter { size ->
+            val ratio = size.width.toDouble() / size.height.toDouble()
+            kotlin.math.abs(ratio - ratio43) < tolerance
         }
-
-        return when {
-            bigEnough.isNotEmpty() -> bigEnough.minByOrNull { it.width * it.height }!!
-            notBigEnough.isNotEmpty() -> notBigEnough.maxByOrNull { it.width * it.height }!!
-            else -> choices[0]
+        
+        if (ratio43Sizes.isNotEmpty()) {
+            // 在4:3比例中选择最接近目标尺寸的
+            return ratio43Sizes.minByOrNull { size ->
+                kotlin.math.abs(size.width - textureViewWidth) + kotlin.math.abs(size.height - textureViewHeight)
+            }!!
         }
+        
+        // 其次尝试找到16:9比例的分辨率
+        val ratio169Sizes = choices.filter { size ->
+            val ratio = size.width.toDouble() / size.height.toDouble()
+            kotlin.math.abs(ratio - ratio169) < tolerance
+        }
+        
+        if (ratio169Sizes.isNotEmpty()) {
+            return ratio169Sizes.minByOrNull { size ->
+                kotlin.math.abs(size.width - textureViewWidth) + kotlin.math.abs(size.height - textureViewHeight)
+            }!!
+        }
+        
+        // 最后选择最接近4:3比例的分辨率
+        return choices.minByOrNull { size ->
+            val ratio = size.width.toDouble() / size.height.toDouble()
+            kotlin.math.abs(ratio - ratio43)
+        } ?: choices[0]
     }
 
     private fun configureTransform(viewWidth: Int, viewHeight: Int) {
+        if (viewWidth == 0 || viewHeight == 0) return
+        
         val matrix = Matrix()
-        if (previewSize != null) {
-            val rotation = requireActivity().windowManager.defaultDisplay.rotation
-            
-            // 根据设备方向计算需要的旋转角度
-            val rotationDegrees = when (rotation) {
-                Surface.ROTATION_0 -> 90f    // 竖屏，相机需要旋转90度
-                Surface.ROTATION_90 -> 0f    // 横屏左，不需要旋转
-                Surface.ROTATION_180 -> 270f // 倒竖屏，相机需要旋转270度
-                Surface.ROTATION_270 -> 180f // 横屏右，相机需要旋转180度
-                else -> 90f
-            }
-            
-            matrix.postRotate(rotationDegrees, viewWidth / 2f, viewHeight / 2f)
-            
-            // 应用变换矩阵到TextureView
-            textureView.setTransform(matrix)
-            Log.d(TAG, "Applied camera transform: rotation=${rotationDegrees}°, deviceRotation=$rotation, viewSize=${viewWidth}x${viewHeight}")
+        val rotation = -90f
+        
+        // 使用实际的相机预览尺寸，如果为空则不进行变换
+        val cameraWidth = previewSize?.width?.toFloat()
+        val cameraHeight = previewSize?.height?.toFloat()
+        
+        if (cameraWidth == null || cameraHeight == null) {
+            Log.w(TAG, "Camera size not set, skipping transform")
+            return
         }
+        
+        val centerX = viewWidth / 2f
+        val centerY = viewHeight / 2f
+        
+        matrix.postRotate(rotation, centerX, centerY)
+        
+        // -90度旋转后，原来的宽度变成高度，高度变成宽度
+        // 所以我们需要将view的宽度与camera的高度比较，view的高度与camera的宽度比较
+        val scaleX = viewWidth.toFloat() / cameraHeight   // viewWidth / cameraHeight (旋转后camera高度对应view宽度)
+        val scaleY = viewHeight.toFloat() / cameraWidth   // viewHeight / cameraWidth (旋转后camera宽度对应view高度)
+        
+        // 使用较大的缩放比例来填满整个视图（CENTER_CROP效果），避免白边
+        val scale = kotlin.math.max(scaleX, scaleY)
+        
+        // 应用缩放
+        matrix.postScale(scale, scale, centerX, centerY)
+        
+        // 应用变换矩阵到TextureView
+        textureView.setTransform(matrix)
+        Log.d(TAG, "Applied camera transform: rotation=${rotation}°, scale=$scale, viewSize=${viewWidth}x${viewHeight}")
     }
 
     private fun updateStatus(status: String) {

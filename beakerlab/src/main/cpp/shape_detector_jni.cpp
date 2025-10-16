@@ -72,7 +72,7 @@ cv::Mat createColorMask(const cv::Mat& image, const std::string& colorName) {
     
     // 定义颜色范围
     std::map<std::string, std::pair<cv::Scalar, cv::Scalar>> colorRanges = {
-        {"Yellow", {cv::Scalar(10, 20, 60), cv::Scalar(65, 255, 255)}},
+        {"Yellow", {cv::Scalar(10, 20, 60), cv::Scalar(40, 255, 255)}},
         {"Green", {cv::Scalar(40, 40, 60), cv::Scalar(85, 255, 255)}},
         {"Cyan", {cv::Scalar(95, 50, 110), cv::Scalar(120, 255, 255)}},
         {"Blue", {cv::Scalar(100, 40, 60), cv::Scalar(140, 255, 255)}},
