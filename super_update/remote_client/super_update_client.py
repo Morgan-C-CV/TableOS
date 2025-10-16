@@ -30,8 +30,8 @@ class SuperUpdateClient:
             self.websocket = await websockets.connect(
                 uri,
                 ping_interval=30,  # 每30秒发送ping
-                ping_timeout=20,   # ping超时20秒
-                close_timeout=10   # 关闭超时10秒
+                ping_timeout=30,   # ping超时30秒
+                close_timeout=20   # 关闭超时20秒
             )
             print("✅ 连接成功!")
             

@@ -181,21 +181,28 @@ class UpdateWebSocketServer(
 
     private fun handleTransferComplete(conn: WebSocket, session: ClientSession) {
         try {
+            Log.d(TAG, "handleTransferComplete called")
             session.fileOutputStream?.close()
             session.fileOutputStream = null
             
             val tempFile = session.tempFile
+            Log.d(TAG, "Temp file: ${tempFile?.absolutePath}, exists: ${tempFile?.exists()}")
+            Log.d(TAG, "Expected size: ${session.fileSize}, received: ${session.receivedBytes}")
+            
             if (tempFile != null && tempFile.exists()) {
                 if (session.receivedBytes == session.fileSize) {
+                    Log.d(TAG, "File size matches, calling onApkReceived")
                     onProgress("文件接收完成: ${session.fileName}")
                     onApkReceived(tempFile)
                     conn.send("{\"type\":\"success\",\"message\":\"Transfer completed successfully\"}")
                 } else {
+                    Log.e(TAG, "文件大小不匹配: 期望${session.fileSize}, 实际${session.receivedBytes}")
                     onError("文件大小不匹配: 期望${session.fileSize}, 实际${session.receivedBytes}")
                     tempFile.delete()
                     conn.send("{\"type\":\"error\",\"message\":\"File size mismatch\"}")
                 }
             } else {
+                Log.e(TAG, "临时文件不存在或无法访问")
                 onError("临时文件不存在")
                 conn.send("{\"type\":\"error\",\"message\":\"Temp file not found\"}")
             }

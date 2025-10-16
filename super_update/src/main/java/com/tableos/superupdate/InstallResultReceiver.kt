@@ -13,8 +13,22 @@ class InstallResultReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        Log.d(TAG, "InstallResultReceiver.onReceive called")
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+        val packageName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME)
+        val otherPackageName = intent.getStringExtra(PackageInstaller.EXTRA_OTHER_PACKAGE_NAME)
+        
+        Log.d(TAG, "Installation status: $status, message: $message")
+        Log.d(TAG, "Package name: $packageName, other package: $otherPackageName")
+        Log.d(TAG, "Intent extras: ${intent.extras}")
+        
+        // Log all available extras for debugging
+        intent.extras?.let { extras ->
+            for (key in extras.keySet()) {
+                Log.d(TAG, "Extra: $key = ${extras.get(key)}")
+            }
+        }
 
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {

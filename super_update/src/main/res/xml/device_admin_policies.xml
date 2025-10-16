@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <!-- 强制锁屏密码 -->
+        <force-lock />
+        <!-- 监控登录尝试 -->
+        <watch-login />
+        <!-- 重置密码 -->
+        <reset-password />
+        <!-- 限制密码 -->
+        <limit-password />
+        <!-- 擦除数据 -->
+        <wipe-data />
+        <!-- 设置全局代理 -->
+        <set-global-proxy />
+        <!-- 禁用相机 -->
+        <disable-camera />
+        <!-- 禁用键盘锁 -->
+        <disable-keyguard />
+    </uses-policies>
+</device-admin>

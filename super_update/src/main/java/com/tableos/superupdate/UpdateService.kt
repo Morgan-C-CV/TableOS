@@ -7,14 +7,11 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInstaller
-import android.net.Uri
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.core.content.FileProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -62,9 +59,21 @@ class UpdateService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START_SERVICE -> startUpdateService()
-            ACTION_STOP_SERVICE -> stopUpdateService()
+            ACTION_START_SERVICE -> {
+                Log.d(TAG, "Received ACTION_START_SERVICE")
+                startUpdateService()
+            }
+            ACTION_STOP_SERVICE -> {
+                Log.d(TAG, "Received ACTION_STOP_SERVICE")
+                stopUpdateService()
+            }
+            null -> {
+                // 如果没有指定action，默认启动服务（用于开机自启动）
+                Log.d(TAG, "No action specified, starting service automatically")
+                startUpdateService()
+            }
         }
+        // 返回START_STICKY确保服务在被系统杀死后会重新启动
         return START_STICKY
     }
 
@@ -161,88 +170,55 @@ class UpdateService : Service() {
 
     private fun installApk(apkFile: File) {
         try {
-            onProgress?.invoke("开始安装APK...")
+            Log.d(TAG, "installApk called with file: ${apkFile.absolutePath}")
+            Log.d(TAG, "File exists: ${apkFile.exists()}, size: ${apkFile.length()}")
             
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                // Use FileProvider for Android 7.0+
-                val uri = FileProvider.getUriForFile(
-                    this,
-                    "${packageName}.fileprovider",
-                    apkFile
-                )
-                installApkWithUri(uri)
+            onProgress?.invoke("检查安装权限...")
+            
+            // 检查是否可以安装APK
+            if (!ApkInstaller.canInstallApk(this, apkFile)) {
+                onError?.invoke("无法安装APK：缺少必要权限")
+                apkFile.delete()
+                return
+            }
+            
+            // 获取推荐的安装方式
+            val recommendedMethod = ApkInstaller.getRecommendedInstallMethod(this)
+            onProgress?.invoke("使用${recommendedMethod.name}方式安装APK...")
+            
+            // 执行安装
+            val result = ApkInstaller.installApk(this, apkFile)
+            
+            if (result.success) {
+                val methodName = when (result.method) {
+                    ApkInstaller.InstallMethod.ROOT -> "Root静默安装"
+                    ApkInstaller.InstallMethod.SYSTEM -> "系统级安装"
+                    ApkInstaller.InstallMethod.NORMAL -> "普通安装"
+                }
+                onProgress?.invoke("✅ $methodName 成功: ${result.message}")
+                Log.d(TAG, "APK installation successful: ${result.method} - ${result.message}")
             } else {
-                // Direct file URI for older versions
-                val uri = Uri.fromFile(apkFile)
-                installApkWithUri(uri)
+                onError?.invoke("❌ 安装失败: ${result.message}")
+                Log.e(TAG, "APK installation failed: ${result.method} - ${result.message}")
             }
             
         } catch (e: Exception) {
             Log.e(TAG, "Error installing APK", e)
-            onError?.invoke("安装APK失败: ${e.message}")
-            // Clean up temp file
-            apkFile.delete()
-        }
-    }
-
-    private fun installApkWithUri(uri: Uri) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            // Use PackageInstaller for Android 5.0+
-            installApkWithPackageInstaller(uri)
-        } else {
-            // Use Intent for older versions
-            installApkWithIntent(uri)
-        }
-    }
-
-    private fun installApkWithPackageInstaller(uri: Uri) {
-        try {
-            val packageInstaller = packageManager.packageInstaller
-            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-            
-            val sessionId = packageInstaller.createSession(params)
-            val session = packageInstaller.openSession(sessionId)
-            
-            // Copy APK to session
-            contentResolver.openInputStream(uri)?.use { inputStream ->
-                session.openWrite("package", 0, -1).use { outputStream ->
-                    inputStream.copyTo(outputStream)
+            onError?.invoke("安装APK异常: ${e.message}")
+        } finally {
+            // 清理临时文件
+            try {
+                if (apkFile.exists()) {
+                    apkFile.delete()
+                    Log.d(TAG, "Temporary APK file deleted")
                 }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete temporary APK file", e)
             }
-            
-            // Create install intent
-            val intent = Intent(this, InstallResultReceiver::class.java)
-            val pendingIntent = PendingIntent.getBroadcast(
-                this, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            
-            session.commit(pendingIntent.intentSender)
-            session.close()
-            
-            onProgress?.invoke("APK安装请求已提交")
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Error with PackageInstaller", e)
-            // Fallback to intent method
-            installApkWithIntent(uri)
         }
     }
 
-    private fun installApkWithIntent(uri: Uri) {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-        }
-        
-        try {
-            startActivity(intent)
-            onProgress?.invoke("已打开安装界面")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error starting install intent", e)
-            onError?.invoke("无法打开安装界面: ${e.message}")
-        }
-    }
+
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

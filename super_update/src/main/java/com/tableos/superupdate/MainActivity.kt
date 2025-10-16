@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val REQUEST_INSTALL_PACKAGES = 1001
+        private const val REQUEST_DEVICE_ADMIN = 1002
     }
 
     private lateinit var binding: ActivityMainBinding
@@ -199,45 +200,97 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkPermissions() {
-        // Check install packages permission for Android 8.0+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (!packageManager.canRequestPackageInstalls()) {
-                showInstallPermissionDialog()
-            }
+        // 使用新的权限管理工具检查所有权限
+        val permissionStatus = PermissionUtils.checkAllPermissions(this)
+        
+        // 显示权限详情
+        addLogMessage("=== 权限检查 ===")
+        addLogMessage("安装权限: ${if (permissionStatus.hasInstallPermission) "✅" else "❌"}")
+        addLogMessage("存储权限: ${if (permissionStatus.hasStoragePermission) "✅" else "❌"}")
+        addLogMessage("Root权限: ${if (permissionStatus.hasRootPermission) "✅" else "❌"}")
+        addLogMessage("设备Root: ${if (permissionStatus.isDeviceRooted) "✅" else "❌"}")
+        addLogMessage("设备管理员: ${if (permissionStatus.hasDeviceAdminPermission) "✅" else "❌"}")
+        
+        // 显示安装能力
+        val capabilities = ApkInstaller.getInstallCapabilities(this)
+        addLogMessage(capabilities)
+        
+        // 请求缺失的权限
+        if (!permissionStatus.hasStoragePermission) {
+            addLogMessage("⚠️ 请求存储权限...")
+            PermissionUtils.requestStoragePermission(this, REQUEST_INSTALL_PACKAGES)
         }
-
-        // Check notification permission for Android 13+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
-                != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                    1002
-                )
-            }
+        
+        if (!permissionStatus.hasInstallPermission) {
+            addLogMessage("⚠️ 需要安装权限...")
+            showInstallPermissionDialog()
+        }
+        
+        // 请求设备管理员权限
+        if (!permissionStatus.hasDeviceAdminPermission) {
+            addLogMessage("⚠️ 请求设备管理员权限...")
+            showDeviceAdminPermissionDialog()
+        }
+        
+        // 尝试获取系统级权限
+        if (permissionStatus.hasRootPermission) {
+            addLogMessage("🔧 尝试获取系统级权限...")
+            val systemPermResult = PermissionUtils.tryGrantSystemPermissions(this)
+            addLogMessage("系统权限: ${if (systemPermResult) "✅ 成功" else "❌ 失败"}")
         }
     }
 
     private fun showInstallPermissionDialog() {
+        val permissionStatus = PermissionUtils.checkAllPermissions(this)
+        
+        val message = buildString {
+            appendLine("应用需要安装权限来安装APK文件。")
+            appendLine()
+            appendLine("当前状态:")
+            appendLine("• 安装权限: ${if (permissionStatus.hasInstallPermission) "✅ 已授予" else "❌ 未授予"}")
+            appendLine("• Root权限: ${if (permissionStatus.hasRootPermission) "✅ 已获得" else "❌ 未获得"}")
+            appendLine("• 系统应用: ${if (PermissionUtils.isSystemApp(this@MainActivity)) "✅ 是" else "❌ 否"}")
+            appendLine()
+            if (permissionStatus.hasRootPermission) {
+                appendLine("✨ 检测到Root权限，可以进行静默安装")
+            } else {
+                appendLine("请在设置中允许此应用安装未知来源的应用。")
+            }
+        }
+        
         AlertDialog.Builder(this)
-            .setTitle("需要安装权限")
-            .setMessage("为了能够安装接收到的APK文件，需要授予安装未知来源应用的权限。")
+            .setTitle("安装权限")
+            .setMessage(message)
             .setPositiveButton("去设置") { _, _ ->
-                requestInstallPermission()
+                PermissionUtils.requestInstallPermission(this)
             }
             .setNegativeButton("取消", null)
             .show()
     }
-
-    private fun requestInstallPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                data = Uri.parse("package:$packageName")
-            }
-            requestInstallPermissionLauncher.launch(intent)
+    
+    private fun showDeviceAdminPermissionDialog() {
+        val message = buildString {
+            appendLine("应用需要设备管理员权限来进行系统级操作。")
+            appendLine()
+            appendLine("设备管理员权限可以让应用:")
+            appendLine("• 静默安装APK文件")
+            appendLine("• 执行系统级操作")
+            appendLine("• 管理设备策略")
+            appendLine()
+            appendLine("这将提高应用的安装成功率和功能完整性。")
         }
+        
+        AlertDialog.Builder(this)
+            .setTitle("设备管理员权限")
+            .setMessage(message)
+            .setPositiveButton("授予权限") { _, _ ->
+                PermissionUtils.requestDeviceAdminPermission(this, REQUEST_DEVICE_ADMIN)
+            }
+            .setNegativeButton("跳过", null)
+            .show()
     }
+
+
 
     private fun bindToService() {
         val intent = Intent(this, UpdateService::class.java)
@@ -368,6 +421,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        when (requestCode) {
+            REQUEST_DEVICE_ADMIN -> {
+                if (PermissionUtils.hasDeviceAdminPermission(this)) {
+                    addLogMessage("✅ 设备管理员权限已授予")
+                } else {
+                    addLogMessage("❌ 设备管理员权限被拒绝")
+                }
+            }
+        }
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -375,11 +441,11 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
-            1002 -> {
+            REQUEST_INSTALL_PACKAGES -> {
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    addLogMessage("✅ 通知权限已授予")
+                    addLogMessage("✅ 存储权限已授予")
                 } else {
-                    addLogMessage("⚠️ 通知权限被拒绝")
+                    addLogMessage("❌ 存储权限被拒绝")
                 }
             }
         }
