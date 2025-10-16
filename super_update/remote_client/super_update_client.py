@@ -26,7 +26,13 @@ class SuperUpdateClient:
         try:
             uri = f"ws://{self.host}:{self.port}"
             print(f"正在连接到 {uri}...")
-            self.websocket = await websockets.connect(uri)
+            # 设置5分钟超时和ping间隔来保持连接活跃
+            self.websocket = await websockets.connect(
+                uri,
+                ping_interval=30,  # 每30秒发送ping
+                ping_timeout=20,   # ping超时20秒
+                close_timeout=10   # 关闭超时10秒
+            )
             print("✅ 连接成功!")
             
             # 等待并处理服务器的连接响应
@@ -114,7 +120,7 @@ class SuperUpdateClient:
             print(f"❌ 发送完成信号失败: {e}")
             return False
     
-    async def wait_for_response(self, timeout: int = 30) -> Optional[dict]:
+    async def wait_for_response(self, timeout: int = 300) -> Optional[dict]:
         """等待服务器响应"""
         try:
             print(f"⏳ 等待服务器响应 (超时: {timeout}秒)...")
