@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Super Update</string>
+    <string name="ip_address_label">本机IP地址:</string>
+    <string name="port_label">端口:</string>
+    <string name="status_label">服务状态:</string>
+    <string name="status_running">运行中</string>
+    <string name="status_stopped">已停止</string>
+    <string name="start_service">启动服务</string>
+    <string name="stop_service">停止服务</string>
+    <string name="connection_info">连接信息</string>
+    <string name="remote_connection_guide">远程计算机可通过以下地址连接:</string>
+    <string name="websocket_url">WebSocket URL: ws://%1$s:%2$d</string>
+    <string name="tcp_url">TCP地址: %1$s:%2$d</string>
+    <string name="waiting_connection">等待远程连接...</string>
+    <string name="client_connected">客户端已连接</string>
+    <string name="receiving_apk">正在接收APK文件...</string>
+    <string name="installing_apk">正在安装APK...</string>
+    <string name="install_success">安装成功</string>
+    <string name="install_failed">安装失败</string>
+    <string name="permission_required">需要安装权限</string>
+    <string name="grant_install_permission">请授予安装未知来源应用的权限</string>
+    <string name="service_notification_title">Super Update 服务</string>
+    <string name="service_notification_text">正在监听远程连接...</string>
+</resources>
